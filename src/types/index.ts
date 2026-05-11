@@ -3,8 +3,8 @@ export type StudyMode = 'flashcard' | 'writing' | 'browse'
 export type AppScreen =
   | { type: 'home' }
   | { type: 'category'; categoryName: string }
-  | { type: 'study'; mode: StudyMode; category: string; chunkIndex: number; cards: Card[] }
-  | { type: 'summary'; mode: StudyMode; category: string; chunkIndex: number; correct: Card[]; incorrect: Card[]; allCards: Card[] }
+  | { type: 'study'; mode: StudyMode; category: string; chunkIndex: number; cards: Card[]; isMix?: boolean }
+  | { type: 'summary'; mode: StudyMode; category: string; chunkIndex: number; correct: Card[]; incorrect: Card[]; allCards: Card[]; isMix?: boolean }
   | { type: 'admin' }
 
 export interface Card {
@@ -30,6 +30,12 @@ export interface CardProgress {
   reps: number
   lapses: number
   lastReviewed: string | null
+  // Mastery
+  masteryStreak: number          // consecutive different-day correct sessions
+  lastCorrectSession: string | null  // date string (toDateString) of last correct
+  mastered: boolean              // auto: masteryStreak >= 5
+  dismissed: boolean             // user clicked "don't show again"
+  dismissedAt: string | null     // ISO date when dismissed (for weekly reset)
 }
 
 export type SRSGrade = 1 | 2 | 3 | 4

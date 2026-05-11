@@ -41,9 +41,13 @@ interface MatchResult {
 // THRESHOLD: how similar the answer needs to be to pass (0–1)
 const PASS_THRESHOLD = 0.72
 
-// Simple normalizer for English answers — lowercase only
+// Strip parenthetical qualifiers: "I go (f)" → "I go", "you go (to a man)" → "you go"
+function stripQualifiers(text: string): string {
+  return text.replace(/\([^)]*\)/g, '').replace(/\s+/g, ' ').trim()
+}
+
 function normalizeEnglish(text: string): string {
-  return text.toLowerCase().replace(/[''`]/g, '').replace(/\s+/g, ' ').trim()
+  return stripQualifiers(text).toLowerCase().replace(/[''`]/g, '').trim()
 }
 
 export function checkEnglish(userInput: string, expected: string): { score: number; passed: boolean } {

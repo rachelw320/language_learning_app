@@ -1,38 +1,29 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import type { Card, CardProgress, StudyMode } from '../types'
 import { supabase } from '../lib/supabase'
-import { calculateNextReview, newCardProgress } from '../lib/srs'
+import { calculateNextReview, updateMastery, dismissCard, newCardProgress } from '../lib/srs'
+import { loadProgress, saveProgress } from '../lib/progress'
 import { checkAnswer, checkEnglish } from '../lib/fuzzyMatch'
 import { playAudio } from './AudioButton'
-
-const PROGRESS_KEY = 'ea_srs_progress'
-
-function loadProgress(): Record<string, CardProgress> {
-  try { return JSON.parse(localStorage.getItem(PROGRESS_KEY) ?? '{}') }
-  catch { return {} }
-}
-
-function saveProgress(map: Record<string, CardProgress>) {
-  localStorage.setItem(PROGRESS_KEY, JSON.stringify(map))
-}
 
 interface Props {
   mode: StudyMode
   category: string
   chunkIndex: number
   cards: Card[]
+  isMix?: boolean
   onBack: () => void
   onComplete: (correct: Card[], incorrect: Card[]) => void
 }
 
 type AnswerState = 'idle' | 'correct' | 'incorrect'
 
-export default function StudyScreen({ mode, category: _category, chunkIndex: _chunkIndex, cards, onBack, onComplete }: Props) {
+export default function StudyScreen({ mode, category: _cat, chunkIndex: _ci, cards, isMix: _isMix, onBack, onComplete }: Props) {
   const [extraCards, setExtraCards] = useState<Card[]>([])
   const allCards = [...cards, ...extraCards]
 
   const [index, setIndex] = useState(0)
-  const [, setProgress] = useState<Record<string, CardProgress>>(loadProgress)
+  const [progress, setProgress] = useState<Record<string, CardProgress>>(loadProgress)
   const [correct, setCorrect] = useState<Card[]>([])
   const [incorrect, setIncorrect] = useState<Card[]>([])
 
@@ -40,13 +31,11 @@ export default function StudyScreen({ mode, category: _category, chunkIndex: _ch
   const [answerState, setAnswerState] = useState<AnswerState>('idle')
   const [matchScore, setMatchScore] = useState(0)
 
-  // Browse mode
   const [searchQuery, setSearchQuery] = useState('')
 
   const inputRef = useRef<HTMLInputElement>(null)
   const card = allCards[index]
 
-  // Stable refs to avoid stale closures in auto-advance
   const onCompleteRef = useRef(onComplete)
   onCompleteRef.current = onComplete
   const correctRef = useRef(correct)
@@ -77,41 +66,52 @@ export default function StudyScreen({ mode, category: _category, chunkIndex: _ch
     })
   }, [])
 
-  // Mode 1 (flashcard/English→Arabic): autoplay English audio on new card
+  // Mode 1: autoplay English audio on new card
   useEffect(() => {
     if (mode !== 'flashcard' || !card) return
     playAudio(card.audio.en).catch(() => {})
   }, [index, card, mode])
 
-  // Mode 2 (writing/Arabic→English): autoplay Arabic audio on new card
+  // Mode 2: autoplay Arabic audio on new card
   useEffect(() => {
     if (mode !== 'writing' || !card) return
     playAudio(card.audio.ar).catch(() => {})
   }, [index, card, mode])
 
-  // Auto-focus input on new card (both typing modes)
+  // Auto-focus input on new card
   useEffect(() => {
     if (mode === 'browse' || answerState !== 'idle') return
     const t = setTimeout(() => inputRef.current?.focus(), 120)
     return () => clearTimeout(t)
   }, [index, mode, answerState])
 
-  // ── SRS ────────────────────────────────────────────────────────────────────
+  // ── Progress helpers ────────────────────────────────────────────────────────
 
-  const applyGrade = useCallback((cardId: string, passed: boolean) => {
+  const applyResult = useCallback((cardId: string, passed: boolean) => {
     setProgress(prev => {
-      const existing = prev[cardId] ?? newCardProgress(cardId)
-      const updated = calculateNextReview(existing, passed ? 3 : 1)
-      const next = { ...prev, [cardId]: updated }
+      const existing: CardProgress = prev[cardId] ?? newCardProgress(cardId)
+      const afterSRS = calculateNextReview(existing, passed ? 3 : 1)
+      const afterMastery = updateMastery(afterSRS, passed)
+      const next = { ...prev, [cardId]: afterMastery }
       saveProgress(next)
       return next
     })
   }, [])
 
+  const handleDismiss = useCallback(() => {
+    if (!card) return
+    setProgress(prev => {
+      const existing: CardProgress = prev[card.id] ?? newCardProgress(card.id)
+      const next = { ...prev, [card.id]: dismissCard(existing) }
+      saveProgress(next)
+      return next
+    })
+  }, [card])
+
   // ── Navigation ─────────────────────────────────────────────────────────────
 
   const advance = useCallback((thisCard: Card, passed: boolean) => {
-    const newCorrect  = passed ? [...correctRef.current, thisCard]   : correctRef.current
+    const newCorrect   = passed  ? [...correctRef.current,   thisCard] : correctRef.current
     const newIncorrect = !passed ? [...incorrectRef.current, thisCard] : incorrectRef.current
 
     if (index >= allCards.length - 1) {
@@ -130,7 +130,7 @@ export default function StudyScreen({ mode, category: _category, chunkIndex: _ch
   // ── Check handlers ─────────────────────────────────────────────────────────
 
   const submitResult = (passed: boolean, score: number) => {
-    applyGrade(card.id, passed)
+    applyResult(card.id, passed)
     setMatchScore(score)
     setAnswerState(passed ? 'correct' : 'incorrect')
     if (passed) {
@@ -139,14 +139,12 @@ export default function StudyScreen({ mode, category: _category, chunkIndex: _ch
     }
   }
 
-  // Mode 1: check transliteration / arabic answer
   const handleCheckTranslit = () => {
     if (!answer.trim()) return
     const r = checkAnswer(answer.trim(), card.accepted, card.arabicVariants)
     submitResult(r.passed, r.score)
   }
 
-  // Mode 2: check English answer
   const handleCheckEnglish = () => {
     if (!answer.trim()) return
     const r = checkEnglish(answer.trim(), card.english)
@@ -169,6 +167,10 @@ export default function StudyScreen({ mode, category: _category, chunkIndex: _ch
     setIndex(i => i + 1)
   }
 
+  // Is this card mastered (auto or via previous sessions)?
+  const cardProgress = card ? progress[card.id] : undefined
+  const isMastered = cardProgress?.mastered ?? false
+
   // ══════════════════════════════════════════════════════════════════════════
   // BROWSE MODE
   // ══════════════════════════════════════════════════════════════════════════
@@ -189,7 +191,6 @@ export default function StudyScreen({ mode, category: _category, chunkIndex: _ch
           <span className="text-textSecondary text-sm font-medium">Browse</span>
           <span className="text-textSecondary text-xs">{filtered.length}</span>
         </div>
-
         <div className="px-4 pt-3 pb-2 flex-shrink-0">
           <input
             value={searchQuery}
@@ -199,7 +200,6 @@ export default function StudyScreen({ mode, category: _category, chunkIndex: _ch
             style={{ fontSize: '16px' }}
           />
         </div>
-
         <div className="flex-1 overflow-y-auto px-4 py-2 space-y-2 safe-bottom">
           {filtered.map(c => (
             <div key={c.id} className="bg-surface border border-border rounded-2xl px-4 py-3.5 flex items-center gap-3">
@@ -225,9 +225,52 @@ export default function StudyScreen({ mode, category: _category, chunkIndex: _ch
   }
 
   // ══════════════════════════════════════════════════════════════════════════
-  // MODE 1: ENGLISH → ARABIC  (flashcard)
-  // Prompt: English word + English audio
-  // Task: type the transliteration
+  // SHARED: Feedback panel (used by both typing modes)
+  // ══════════════════════════════════════════════════════════════════════════
+
+  const FeedbackPanel = ({ revealArabic }: { revealArabic: boolean }) => (
+    <div className={`fade-in rounded-2xl px-5 py-4 border ${answerState === 'correct' ? 'border-success/40 bg-success/10' : 'border-danger/40 bg-danger/10'}`}>
+      <div className="flex items-baseline gap-2 mb-2">
+        <span className={`font-bold text-base ${answerState === 'correct' ? 'text-success' : 'text-danger'}`}>
+          {answerState === 'correct' ? '✓ Correct!' : '✗ Not quite'}
+        </span>
+        {answerState === 'incorrect' && (
+          <span className="text-textSecondary text-xs">{Math.round(matchScore * 100)}% match</span>
+        )}
+        {answerState === 'correct' && isMastered && (
+          <span className="text-yellow-400 text-xs font-semibold">⭐ Mastered!</span>
+        )}
+      </div>
+
+      {revealArabic ? (
+        <>
+          <p className="arabic-text text-white text-3xl leading-relaxed">{card.arabic}</p>
+          <p className="text-primary text-base mt-1">{card.transliteration}</p>
+        </>
+      ) : (
+        <p className="text-white text-xl font-semibold">{card.english}</p>
+      )}
+
+      {answerState === 'incorrect' && (
+        <p className="text-textSecondary text-sm mt-2">
+          You wrote: <span className="text-white">{answer}</span>
+        </p>
+      )}
+
+      {/* Mastered — don't show again */}
+      {answerState === 'correct' && isMastered && (
+        <button
+          onClick={handleDismiss}
+          className="mt-3 text-xs text-textSecondary underline pressable"
+        >
+          Mastered · don't show again for a week
+        </button>
+      )}
+    </div>
+  )
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // MODE 1: ENGLISH → ARABIC
   // ══════════════════════════════════════════════════════════════════════════
 
   if (mode === 'flashcard') {
@@ -241,7 +284,6 @@ export default function StudyScreen({ mode, category: _category, chunkIndex: _ch
 
         <div className="flex-1 flex flex-col px-5 py-5 gap-4 overflow-y-auto">
 
-          {/* English prompt card */}
           <div className="bg-surface border border-border rounded-3xl px-6 py-6 flex items-center justify-between gap-4" style={{ minHeight: '110px' }}>
             <p className="text-white text-2xl font-semibold leading-snug flex-1">{card.english}</p>
             <button
@@ -253,29 +295,8 @@ export default function StudyScreen({ mode, category: _category, chunkIndex: _ch
             </button>
           </div>
 
-          {/* Feedback after submit */}
-          {answerState !== 'idle' && (
-            <div className={`fade-in rounded-2xl px-5 py-4 border ${answerState === 'correct' ? 'border-success/40 bg-success/10' : 'border-danger/40 bg-danger/10'}`}>
-              <div className="flex items-baseline gap-2 mb-2">
-                <span className={`font-bold text-base ${answerState === 'correct' ? 'text-success' : 'text-danger'}`}>
-                  {answerState === 'correct' ? '✓ Correct!' : '✗ Not quite'}
-                </span>
-                {answerState === 'incorrect' && (
-                  <span className="text-textSecondary text-xs">{Math.round(matchScore * 100)}% match</span>
-                )}
-              </div>
-              {/* Always reveal Arabic on answer */}
-              <p className="arabic-text text-white text-3xl leading-relaxed">{card.arabic}</p>
-              <p className="text-primary text-base mt-1">{card.transliteration}</p>
-              {answerState === 'incorrect' && (
-                <p className="text-textSecondary text-sm mt-2">
-                  You wrote: <span className="text-white">{answer}</span>
-                </p>
-              )}
-            </div>
-          )}
+          {answerState !== 'idle' && <FeedbackPanel revealArabic={true} />}
 
-          {/* Input */}
           {answerState === 'idle' && (
             <div className="space-y-3">
               <input
@@ -301,7 +322,6 @@ export default function StudyScreen({ mode, category: _category, chunkIndex: _ch
             </div>
           )}
 
-          {/* Next — only on incorrect */}
           {answerState === 'incorrect' && (
             <button onClick={handleNext} className="fade-in w-full bg-surfaceHigh border border-border rounded-2xl py-4 text-white font-semibold pressable">
               Next →
@@ -309,16 +329,13 @@ export default function StudyScreen({ mode, category: _category, chunkIndex: _ch
           )}
 
           <button onClick={handleSkip} className="text-textSecondary text-sm text-center pressable py-2">Skip</button>
-
         </div>
       </div>
     )
   }
 
   // ══════════════════════════════════════════════════════════════════════════
-  // MODE 2: ARABIC → ENGLISH  (writing)
-  // Prompt: Arabic script + transliteration + Arabic audio
-  // Task: type the English meaning
+  // MODE 2: ARABIC → ENGLISH
   // ══════════════════════════════════════════════════════════════════════════
 
   return (
@@ -331,7 +348,6 @@ export default function StudyScreen({ mode, category: _category, chunkIndex: _ch
 
       <div className="flex-1 flex flex-col px-5 py-5 gap-4 overflow-y-auto">
 
-        {/* Arabic + transliteration prompt card */}
         <div className="bg-surface border border-border rounded-3xl px-6 py-6" style={{ minHeight: '110px' }}>
           <div className="flex items-start justify-between gap-4">
             <div className="flex-1 min-w-0">
@@ -348,27 +364,8 @@ export default function StudyScreen({ mode, category: _category, chunkIndex: _ch
           </div>
         </div>
 
-        {/* Feedback after submit */}
-        {answerState !== 'idle' && (
-          <div className={`fade-in rounded-2xl px-5 py-4 border ${answerState === 'correct' ? 'border-success/40 bg-success/10' : 'border-danger/40 bg-danger/10'}`}>
-            <div className="flex items-baseline gap-2 mb-2">
-              <span className={`font-bold text-base ${answerState === 'correct' ? 'text-success' : 'text-danger'}`}>
-                {answerState === 'correct' ? '✓ Correct!' : '✗ Not quite'}
-              </span>
-              {answerState === 'incorrect' && (
-                <span className="text-textSecondary text-xs">{Math.round(matchScore * 100)}% match</span>
-              )}
-            </div>
-            <p className="text-white text-xl font-semibold">{card.english}</p>
-            {answerState === 'incorrect' && (
-              <p className="text-textSecondary text-sm mt-1">
-                You wrote: <span className="text-white">{answer}</span>
-              </p>
-            )}
-          </div>
-        )}
+        {answerState !== 'idle' && <FeedbackPanel revealArabic={false} />}
 
-        {/* Input */}
         {answerState === 'idle' && (
           <div className="space-y-3">
             <input
@@ -394,7 +391,6 @@ export default function StudyScreen({ mode, category: _category, chunkIndex: _ch
           </div>
         )}
 
-        {/* Next — only on incorrect */}
         {answerState === 'incorrect' && (
           <button onClick={handleNext} className="fade-in w-full bg-surfaceHigh border border-border rounded-2xl py-4 text-white font-semibold pressable">
             Next →
@@ -402,7 +398,6 @@ export default function StudyScreen({ mode, category: _category, chunkIndex: _ch
         )}
 
         <button onClick={handleSkip} className="text-textSecondary text-sm text-center pressable py-2">Skip</button>
-
       </div>
     </div>
   )

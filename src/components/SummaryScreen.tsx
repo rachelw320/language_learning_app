@@ -12,6 +12,7 @@ interface Props {
   correct: Card[]
   incorrect: Card[]
   allCards: Card[]
+  isMix?: boolean
   onRetry: () => void
   onReviewWrong: () => void
   onNextSet: (chunkIndex: number, cards: Card[]) => void
@@ -25,6 +26,7 @@ export default function SummaryScreen({
   correct,
   incorrect,
   allCards: sessionCards,
+  isMix,
   onRetry,
   onReviewWrong,
   onNextSet,
@@ -36,17 +38,18 @@ export default function SummaryScreen({
 
   const catCards = getCardsForCategory(allCards, category)
   const totalChunks = getChunkCount(catCards)
-  const hasNextSet = chunkIndex + 1 < totalChunks
+  const hasNextSet = !isMix && chunkIndex + 1 < totalChunks
   const nextChunkCards = hasNextSet ? getChunk(catCards, chunkIndex + 1) : []
 
-  const modeLabel = mode === 'flashcard' ? 'Flashcard' : mode === 'writing' ? 'Writing' : 'Browse'
+  const modeLabel = mode === 'flashcard' ? 'English → Arabic' : mode === 'writing' ? 'Arabic → English' : 'Browse'
+  const sessionLabel = isMix ? 'Mix' : `Set ${chunkIndex + 1}`
 
   return (
     <div className="flex flex-col h-full safe-top safe-bottom">
       {/* Nav */}
       <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b border-border flex-shrink-0">
         <button onClick={onBack} className="text-primary pressable text-sm font-medium">← Back</button>
-        <span className="text-textSecondary text-sm font-medium">{modeLabel} · Set {chunkIndex + 1}</span>
+        <span className="text-textSecondary text-sm font-medium">{modeLabel} · {sessionLabel}</span>
         <span className="text-textSecondary text-xs">{category}</span>
       </div>
 

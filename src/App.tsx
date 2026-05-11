@@ -22,8 +22,8 @@ export default function App() {
         <CategoryScreen
           categoryName={screen.categoryName}
           onBack={() => setScreen({ type: 'home' })}
-          onStart={(mode, category, chunkIndex, cards) =>
-            setScreen({ type: 'study', mode, category, chunkIndex, cards })
+          onStart={(mode, category, chunkIndex, cards, isMix) =>
+            setScreen({ type: 'study', mode, category, chunkIndex, cards, isMix })
           }
         />
       )}
@@ -34,6 +34,7 @@ export default function App() {
           category={screen.category}
           chunkIndex={screen.chunkIndex}
           cards={screen.cards}
+          isMix={screen.isMix}
           onBack={() => setScreen({ type: 'category', categoryName: screen.category })}
           onComplete={(correct, incorrect) =>
             setScreen({
@@ -44,6 +45,7 @@ export default function App() {
               correct,
               incorrect,
               allCards: screen.cards,
+              isMix: screen.isMix,
             })
           }
         />
@@ -57,6 +59,7 @@ export default function App() {
           correct={screen.correct}
           incorrect={screen.incorrect}
           allCards={screen.allCards}
+          isMix={screen.isMix}
           onRetry={() =>
             setScreen({
               type: 'study',
@@ -64,6 +67,7 @@ export default function App() {
               category: screen.category,
               chunkIndex: screen.chunkIndex,
               cards: screen.allCards,
+              isMix: screen.isMix,
             })
           }
           onReviewWrong={() =>
