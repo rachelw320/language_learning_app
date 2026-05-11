@@ -7,7 +7,6 @@ import { checkAnswer } from '../lib/fuzzyMatch'
 import { playAudio } from './AudioButton'
 import FlashCard from './FlashCard'
 import SRSButtons from './SRSButtons'
-import MicButton from './MicButton'
 import allCards from '../data/cards.json'
 
 interface Props {
@@ -19,15 +18,37 @@ interface Props {
 type UIState = 'front' | 'revealed' | 'graded'
 
 export default function StudyScreen({ user, mode, onBack }: Props) {
-  const [cards] = useState<Card[]>(allCards as Card[])
+  const [cards, setCards] = useState<Card[]>(allCards as Card[])
   const [index, setIndex] = useState(0)
   const [uiState, setUiState] = useState<UIState>('front')
   const [progress, setProgress] = useState<Record<string, CardProgress>>({})
+  const [answerMode, setAnswerMode] = useState<'arabic' | 'translit'>('arabic')
+  const [arabicAnswer, setArabicAnswer] = useState('')
   const [typedAnswer, setTypedAnswer] = useState('')
   const [speakingResult, setSpeakingResult] = useState<SpeakingResult | null>(null)
-  const [speakingError, setSpeakingError] = useState('')
 
   const card = cards[index]
+
+  // Load any custom cards added via admin screen
+  useEffect(() => {
+    supabase.from('cards').select('*').then(({ data }) => {
+      if (data && data.length > 0) {
+        const custom: Card[] = data.map(row => ({
+          id:              row.id,
+          deck:            'custom',
+          english:         row.english,
+          arabic:          row.arabic,
+          transliteration: row.transliteration,
+          accepted:        row.accepted  ?? [row.transliteration],
+          arabicVariants:  row.arabic_variants ?? [row.arabic],
+          audio:           { ar: row.audio_ar ?? '', en: row.audio_en ?? '' },
+          tags:            [],
+          notes:           '',
+        }))
+        setCards([...(allCards as Card[]), ...custom])
+      }
+    })
+  }, [])
 
   // Load SRS progress from Supabase on mount
   useEffect(() => {
@@ -86,9 +107,9 @@ export default function StudyScreen({ user, mode, onBack }: Props) {
 
   const nextCard = () => {
     setUiState('front')
+    setArabicAnswer('')
     setTypedAnswer('')
     setSpeakingResult(null)
-    setSpeakingError('')
     setIndex(i => (i + 1) % cards.length)
   }
 
@@ -137,32 +158,73 @@ export default function StudyScreen({ user, mode, onBack }: Props) {
 
           {/* SPEAKING MODE controls */}
           {mode === 'speaking' && uiState === 'front' && (
-            <div className="flex flex-col items-center gap-4">
-              <MicButton
-                onResult={handleSpeakingCheck}
-                onError={msg => setSpeakingError(msg)}
-              />
-              {speakingError && (
-                <p className="text-textSecondary text-sm text-center">{speakingError}</p>
-              )}
+            <div className="flex flex-col items-center gap-4 w-full">
 
-              {/* Typing fallback */}
-              <div className="w-full flex gap-2">
-                <input
-                  value={typedAnswer}
-                  onChange={e => setTypedAnswer(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && handleSpeakingCheck(typedAnswer)}
-                  placeholder="Or type transliteration…"
-                  className="flex-1 bg-surface border border-border rounded-2xl px-4 py-3 text-textPrimary placeholder-textSecondary text-sm outline-none focus:border-primary"
-                />
+              {/* Tab switcher */}
+              <div className="flex w-full bg-surface rounded-2xl p-1 gap-1">
                 <button
-                  onClick={() => handleSpeakingCheck(typedAnswer)}
-                  disabled={!typedAnswer.trim()}
-                  className="bg-primary rounded-2xl px-4 text-white font-medium pressable disabled:opacity-40"
+                  onClick={() => setAnswerMode('arabic')}
+                  className={`flex-1 py-2 rounded-xl text-sm font-medium transition-colors ${
+                    answerMode === 'arabic' ? 'bg-primary text-white' : 'text-textSecondary'
+                  }`}
                 >
-                  Check
+                  Arabic عربي
+                </button>
+                <button
+                  onClick={() => setAnswerMode('translit')}
+                  className={`flex-1 py-2 rounded-xl text-sm font-medium transition-colors ${
+                    answerMode === 'translit' ? 'bg-primary text-white' : 'text-textSecondary'
+                  }`}
+                >
+                  Transliteration
                 </button>
               </div>
+
+              {/* Arabic input — use iPhone Arabic keyboard mic for STT */}
+              {answerMode === 'arabic' && (
+                <div className="w-full flex gap-2">
+                  <input
+                    value={arabicAnswer}
+                    onChange={e => setArabicAnswer(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && handleSpeakingCheck(arabicAnswer)}
+                    placeholder="اكتب هنا…"
+                    dir="rtl"
+                    lang="ar"
+                    className="flex-1 bg-surface border border-border rounded-2xl px-4 py-3 text-textPrimary placeholder-textSecondary text-base outline-none focus:border-primary text-right"
+                  />
+                  <button
+                    onClick={() => handleSpeakingCheck(arabicAnswer)}
+                    disabled={!arabicAnswer.trim()}
+                    className="bg-primary rounded-2xl px-4 text-white font-medium pressable disabled:opacity-40"
+                  >
+                    Check
+                  </button>
+                </div>
+              )}
+
+              {/* Transliteration input — autocorrect fully disabled */}
+              {answerMode === 'translit' && (
+                <div className="w-full flex gap-2">
+                  <input
+                    value={typedAnswer}
+                    onChange={e => setTypedAnswer(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && handleSpeakingCheck(typedAnswer)}
+                    placeholder="e.g. 3amla eh…"
+                    autoCorrect="off"
+                    autoCapitalize="none"
+                    autoComplete="off"
+                    spellCheck={false}
+                    className="flex-1 bg-surface border border-border rounded-2xl px-4 py-3 text-textPrimary placeholder-textSecondary text-sm outline-none focus:border-primary"
+                  />
+                  <button
+                    onClick={() => handleSpeakingCheck(typedAnswer)}
+                    disabled={!typedAnswer.trim()}
+                    className="bg-primary rounded-2xl px-4 text-white font-medium pressable disabled:opacity-40"
+                  >
+                    Check
+                  </button>
+                </div>
+              )}
 
               {speakingResult && !speakingResult.passed && (
                 <div className="text-center space-y-1">
@@ -180,7 +242,7 @@ export default function StudyScreen({ user, mode, onBack }: Props) {
               )}
               {speakingResult?.passed && (
                 <p className="text-success text-sm font-medium text-center">
-                  ✓ Correct! ({Math.round(speakingResult.score * 100)}% match)
+                  Correct! ({Math.round(speakingResult.score * 100)}% match)
                 </p>
               )}
             </div>

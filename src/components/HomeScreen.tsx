@@ -6,6 +6,7 @@ interface Props {
   user: User
   onStartStudy: (mode: StudyMode) => void
   onSignOut: () => void
+  onAdmin: () => void
 }
 
 const MODES: { id: StudyMode; label: string; description: string; icon: string }[] = [
@@ -35,7 +36,7 @@ const MODES: { id: StudyMode; label: string; description: string; icon: string }
   },
 ]
 
-export default function HomeScreen({ user, onStartStudy, onSignOut }: Props) {
+export default function HomeScreen({ user, onStartStudy, onSignOut, onAdmin }: Props) {
   const totalCards = cards.length
 
   return (
@@ -46,12 +47,21 @@ export default function HomeScreen({ user, onStartStudy, onSignOut }: Props) {
           <div className="text-lg font-semibold">Egyptian Arabic</div>
           <div className="text-textSecondary text-xs truncate max-w-[200px]">{user.email}</div>
         </div>
-        <button
-          onClick={onSignOut}
-          className="text-textSecondary text-sm pressable"
-        >
-          Sign out
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={onAdmin}
+            className="text-primary text-xl pressable leading-none"
+            aria-label="Add card"
+          >
+            +
+          </button>
+          <button
+            onClick={onSignOut}
+            className="text-textSecondary text-sm pressable"
+          >
+            Sign out
+          </button>
+        </div>
       </div>
 
       {/* Content */}

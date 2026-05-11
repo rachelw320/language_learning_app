@@ -1,11 +1,16 @@
 /**
  * generate-audio.js
  *
- * Generates Egyptian Arabic (ar-EG) and English audio for every card.
+ * Generates Egyptian Arabic and English audio for every card using ElevenLabs.
  * Run once: npm run generate-audio
  *
- * Requires: AZURE_SPEECH_KEY and AZURE_SPEECH_REGION in .env
+ * Requires in .env:
+ *   ELEVENLABS_API_KEY
+ *   ELEVENLABS_ARABIC_VOICE_ID   (your Egyptian Arabic voice)
  */
+
+// Needed on networks with custom SSL certificates (e.g. university proxies)
+process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0'
 
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs'
 import { join, dirname } from 'path'
@@ -17,11 +22,15 @@ config()
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const ROOT = join(__dirname, '..')
 
-const KEY    = process.env.AZURE_SPEECH_KEY
-const REGION = process.env.AZURE_SPEECH_REGION ?? 'uksouth'
+const API_KEY        = process.env.ELEVENLABS_API_KEY
+const ARABIC_VOICE   = process.env.ELEVENLABS_ARABIC_VOICE_ID
 
-if (!KEY) {
-  console.error('❌  Missing AZURE_SPEECH_KEY in .env')
+// ElevenLabs voice for English — "Rachel" is a clear, natural English voice
+// Replace this ID if you want a different English voice
+const ENGLISH_VOICE  = '21m00Tcm4TlvDq8ikWAM'
+
+if (!API_KEY || !ARABIC_VOICE) {
+  console.error('❌  Missing ELEVENLABS_API_KEY or ELEVENLABS_ARABIC_VOICE_ID in .env')
   process.exit(1)
 }
 
@@ -34,32 +43,34 @@ mkdirSync(arDir, { recursive: true })
 mkdirSync(enDir, { recursive: true })
 
 /**
- * Call Azure TTS REST API and return raw MP3 bytes.
- * Voice ar-EG-SalmaNeural is specifically Egyptian Arabic dialect.
+ * Call ElevenLabs TTS and return MP3 bytes.
+ * Uses eleven_multilingual_v2 — handles Egyptian Arabic dialect well.
  */
-async function synthesise(text, locale, voice) {
-  const ssml = `
-<speak version="1.0" xml:lang="${locale}">
-  <voice name="${voice}">
-    <prosody rate="0%" pitch="0%">${text}</prosody>
-  </voice>
-</speak>`.trim()
-
-  const url = `https://${REGION}.tts.speech.microsoft.com/cognitiveservices/v1`
+async function synthesise(text, voiceId) {
+  const url = `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`
 
   const res = await fetch(url, {
     method: 'POST',
     headers: {
-      'Ocp-Apim-Subscription-Key': KEY,
-      'Content-Type': 'application/ssml+xml',
-      'X-Microsoft-OutputFormat': 'audio-16khz-128kbitrate-mono-mp3',
+      'xi-api-key': API_KEY,
+      'Content-Type': 'application/json',
+      'Accept': 'audio/mpeg',
     },
-    body: ssml,
+    body: JSON.stringify({
+      text,
+      model_id: 'eleven_v3',
+      voice_settings: {
+        stability: 0.68,          // higher = calmer, more consistent delivery
+        similarity_boost: 0.75,
+        style: 0.0,               // 0 = no added drama or enthusiasm
+        use_speaker_boost: true,
+      },
+    }),
   })
 
   if (!res.ok) {
     const err = await res.text()
-    throw new Error(`Azure TTS error ${res.status}: ${err}`)
+    throw new Error(`ElevenLabs error ${res.status}: ${err}`)
   }
 
   return Buffer.from(await res.arrayBuffer())
@@ -69,63 +80,41 @@ async function generateCard(card) {
   const arPath = join(arDir, `${card.id}.mp3`)
   const enPath = join(enDir, `${card.id}.mp3`)
 
-  // Skip if already generated
-  if (existsSync(arPath) && existsSync(enPath)) {
-    console.log(`  ✓ ${card.id} already exists — skipping`)
-    return
+  // Arabic audio
+  if (existsSync(arPath)) {
+    process.stdout.write(`  ✓ ${card.id} ar  already exists\n`)
+  } else {
+    const audio = await synthesise(card.arabic, ARABIC_VOICE)
+    writeFileSync(arPath, audio)
+    process.stdout.write(`  🎙  ${card.id} ar  → saved\n`)
   }
 
-  // Egyptian Arabic audio
-  if (!existsSync(arPath)) {
-    const arAudio = await synthesise(
-      card.arabic,
-      'ar-EG',
-      'ar-EG-SalmaNeural'  // Egyptian Arabic female — change to ar-EG-ShakirNeural for male
-    )
-    writeFileSync(arPath, arAudio)
-    console.log(`  🎙  ${card.id} Arabic  → ${arPath}`)
-  }
-
-  // English audio
-  if (!existsSync(enPath)) {
-    // Use a clean English description (strip gender notes in brackets)
+  // English audio — strip gender notes in brackets e.g. "(to a man)"
+  if (existsSync(enPath)) {
+    process.stdout.write(`  ✓ ${card.id} en  already exists\n`)
+  } else {
     const enText = card.english.replace(/\s*\([^)]+\)/g, '').trim()
-    const enAudio = await synthesise(
-      enText,
-      'en-US',
-      'en-US-JennyNeural'
-    )
-    writeFileSync(enPath, enAudio)
-    console.log(`  🎙  ${card.id} English → ${enPath}`)
+    const audio = await synthesise(enText, ENGLISH_VOICE)
+    writeFileSync(enPath, audio)
+    process.stdout.write(`  🎙  ${card.id} en  → saved\n`)
   }
 }
 
 async function main() {
-  console.log(`\n🎙  Generating audio for ${cards.length} cards using Azure TTS (${REGION})…\n`)
-  let generated = 0
-  let skipped = 0
+  console.log(`\n🎙  Generating audio for ${cards.length} cards via ElevenLabs…\n`)
 
   for (const card of cards) {
     try {
-      const arPath = join(arDir, `${card.id}.mp3`)
-      const enPath = join(enDir, `${card.id}.mp3`)
-      const alreadyDone = existsSync(arPath) && existsSync(enPath)
-
       await generateCard(card)
-
-      if (alreadyDone) skipped++
-      else generated++
-
-      // Small delay to be polite to the Azure API
-      await new Promise(r => setTimeout(r, 150))
+      // Small delay so we don't hammer the API
+      await new Promise(r => setTimeout(r, 300))
     } catch (err) {
       console.error(`  ❌  ${card.id}: ${err.message}`)
     }
   }
 
-  console.log(`\n✅  Done — ${generated} generated, ${skipped} skipped`)
-  console.log(`    Audio files saved to public/audio/`)
-  console.log(`    Run "npm run build" to include them in the site.\n`)
+  console.log(`\n✅  Done — audio saved to public/audio/`)
+  console.log(`    Run "npm run dev" to hear it in the app.\n`)
 }
 
 main()

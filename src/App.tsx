@@ -5,14 +5,24 @@ import type { Screen, StudyMode } from './types'
 import AuthScreen from './components/AuthScreen'
 import HomeScreen from './components/HomeScreen'
 import StudyScreen from './components/StudyScreen'
+import AdminScreen from './components/AdminScreen'
+
+const DEV_USER = {
+  id: 'dev-user',
+  email: 'dev@local',
+} as unknown as User
 
 export default function App() {
-  const [screen, setScreen] = useState<Screen>('auth')
-  const [user, setUser] = useState<User | null>(null)
+  const isDev = import.meta.env.DEV
+
+  const [screen, setScreen] = useState<Screen>(isDev ? 'home' : 'auth')
+  const [user, setUser] = useState<User | null>(isDev ? DEV_USER : null)
   const [studyMode, setStudyMode] = useState<StudyMode>('flashcard')
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(!isDev)
 
   useEffect(() => {
+    if (isDev) return
+
     // Check if user is already signed in
     supabase.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user ?? null)
@@ -27,7 +37,7 @@ export default function App() {
     })
 
     return () => subscription.unsubscribe()
-  }, [])
+  }, [isDev])
 
   const handleStartStudy = (mode: StudyMode) => {
     setStudyMode(mode)
@@ -55,6 +65,7 @@ export default function App() {
           user={user}
           onStartStudy={handleStartStudy}
           onSignOut={handleSignOut}
+          onAdmin={() => setScreen('admin')}
         />
       )}
 
@@ -62,6 +73,13 @@ export default function App() {
         <StudyScreen
           user={user}
           mode={studyMode}
+          onBack={() => setScreen('home')}
+        />
+      )}
+
+      {screen === 'admin' && user && (
+        <AdminScreen
+          user={user}
           onBack={() => setScreen('home')}
         />
       )}
