@@ -115,7 +115,7 @@ export default function StudyScreen({ user, mode, onBack }: Props) {
 
   const handleSpeakingCheck = (input: string) => {
     const result = checkAnswer(input, card.accepted, card.arabicVariants)
-    setSpeakingResult(result)
+    setSpeakingResult({ ...result, recognised: input })
     if (result.passed) {
       setUiState('revealed')
       playAudio(card.audio.ar).catch(() => {})
