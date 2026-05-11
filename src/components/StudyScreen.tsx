@@ -1,11 +1,10 @@
-import { useState, useEffect } from 'react'
-import type { Card, CardProgress, StudyMode, SRSGrade, SpeakingResult } from '../types'
+import { useState, useEffect, useRef } from 'react'
+import type { Card, CardProgress, StudyMode } from '../types'
 import { supabase } from '../lib/supabase'
 import { calculateNextReview, newCardProgress } from '../lib/srs'
 import { checkAnswer } from '../lib/fuzzyMatch'
 import { playAudio } from './AudioButton'
 import FlashCard from './FlashCard'
-import SRSButtons from './SRSButtons'
 import allCards from '../data/cards.json'
 
 const PROGRESS_KEY = 'ea_srs_progress'
@@ -24,28 +23,32 @@ interface Props {
   onBack: () => void
 }
 
-type UIState = 'front' | 'revealed'
+type AnswerMode = 'translit' | 'arabic'
+
+interface SpeakResult {
+  passed: boolean
+  score: number
+  recognised: string
+}
 
 export default function StudyScreen({ mode, onBack }: Props) {
   const [cards, setCards] = useState<Card[]>(allCards as Card[])
   const [index, setIndex] = useState(0)
-  const [uiState, setUiState] = useState<UIState>('front')
+  const [isRevealed, setIsRevealed] = useState(false)
   const [progress, setProgress] = useState<Record<string, CardProgress>>(loadProgress)
-  const [answerMode, setAnswerMode] = useState<'arabic' | 'translit'>('arabic')
-  const [arabicAnswer, setArabicAnswer] = useState('')
-  const [typedAnswer, setTypedAnswer] = useState('')
-  const [result, setResult] = useState<SpeakingResult | null>(null)
 
+  // Speaking mode
+  const [answerMode, setAnswerMode] = useState<AnswerMode>('translit')
+  const [answer, setAnswer] = useState('')
+  const [speakResult, setSpeakResult] = useState<SpeakResult | null>(null)
+
+  // Browse mode
+  const [searchQuery, setSearchQuery] = useState('')
+
+  const inputRef = useRef<HTMLInputElement>(null)
   const card = cards[index]
 
-  // Autoplay front-face language when a new card appears
-  useEffect(() => {
-    if (!card || mode === 'speaking' || mode === 'write' || mode === 'browse') return
-    const isArabicFront = mode === 'reverse' || mode === 'listening'
-    playAudio(isArabicFront ? card.audio.ar : card.audio.en).catch(() => {})
-  }, [index, card, mode])
-
-  // Merge in custom cards from Supabase
+  // Merge custom Supabase cards
   useEffect(() => {
     supabase.from('cards').select('*').then(({ data }) => {
       if (data && data.length > 0) {
@@ -66,79 +69,122 @@ export default function StudyScreen({ mode, onBack }: Props) {
     })
   }, [])
 
-  const handleReveal = async () => {
-    setUiState('revealed')
-    const audioSrc = (mode === 'reverse' || mode === 'listening') ? card.audio.en : card.audio.ar
-    try { await playAudio(audioSrc) } catch { /* audio may not exist yet */ }
-  }
+  // Flashcard: autoplay English audio when new card appears
+  useEffect(() => {
+    if (mode !== 'flashcard' || !card) return
+    playAudio(card.audio.en).catch(() => {})
+  }, [index, card, mode])
 
-  const handleGrade = (grade: SRSGrade) => {
+  // Speaking: auto-focus input on new card (and mode switch)
+  useEffect(() => {
+    if (mode !== 'speaking' || speakResult) return
+    const t = setTimeout(() => inputRef.current?.focus(), 120)
+    return () => clearTimeout(t)
+  }, [index, mode, speakResult, answerMode])
+
+  // ── SRS helpers ────────────────────────────────────────────────────────────
+
+  const applyGrade = (passed: boolean) => {
     const existing = progress[card.id] ?? newCardProgress(card.id)
-    const updated  = calculateNextReview(existing, grade)
-    const next     = { ...progress, [card.id]: updated }
+    const updated = calculateNextReview(existing, passed ? 3 : 1)
+    const next = { ...progress, [card.id]: updated }
     setProgress(next)
     saveProgress(next)
-    nextCard()
   }
 
+  // ── Navigation ─────────────────────────────────────────────────────────────
+
   const nextCard = () => {
-    setUiState('front')
-    setArabicAnswer('')
-    setTypedAnswer('')
-    setResult(null)
+    setIsRevealed(false)
+    setAnswer('')
+    setSpeakResult(null)
     setIndex(i => (i + 1) % cards.length)
   }
 
-  const handleSpeakingCheck = (input: string) => {
-    const r = checkAnswer(input, card.accepted, card.arabicVariants)
-    setResult({ ...r, recognised: input })
-    playAudio(card.audio.ar).catch(() => {})
-    if (r.passed) setUiState('revealed')
-  }
+  // ── Flashcard handlers ─────────────────────────────────────────────────────
 
-  const handleWriteCheck = (input: string) => {
-    const r = checkAnswer(input, card.accepted, card.arabicVariants)
-    setResult({ ...r, recognised: input })
-    setUiState('revealed')
+  const handleReveal = () => {
+    setIsRevealed(true)
     playAudio(card.audio.ar).catch(() => {})
   }
 
-  const currentWriteInput = answerMode === 'arabic' ? arabicAnswer : typedAnswer
-
-  const modeLabel: Record<StudyMode, string> = {
-    flashcard: 'Flashcard',
-    reverse:   'Reverse',
-    listening: 'Listening',
-    speaking:  'Speaking',
-    write:     'Write',
-    browse:    'All terms',
+  const handleGrade = (passed: boolean) => {
+    applyGrade(passed)
+    nextCard()
   }
 
-  // ── BROWSE MODE ────────────────────────────────────────────────────────────
+  // ── Speaking handlers ──────────────────────────────────────────────────────
+
+  const handleCheck = () => {
+    if (!answer.trim()) return
+    const r = checkAnswer(answer.trim(), card.accepted, card.arabicVariants)
+    setSpeakResult({ passed: r.passed, score: r.score, recognised: answer.trim() })
+    playAudio(card.audio.ar).catch(() => {})
+    applyGrade(r.passed)
+  }
+
+  const handleNext = () => {
+    nextCard()
+    setTimeout(() => inputRef.current?.focus(), 80)
+  }
+
+  const switchAnswerMode = (m: AnswerMode) => {
+    setAnswerMode(m)
+    setAnswer('')
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // BROWSE MODE
+  // ══════════════════════════════════════════════════════════════════════════
+
   if (mode === 'browse') {
+    const filtered = searchQuery.trim()
+      ? cards.filter(c =>
+          c.english.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          c.arabic.includes(searchQuery) ||
+          c.transliteration.toLowerCase().includes(searchQuery.toLowerCase())
+        )
+      : cards
+
     return (
-      <div className="flex flex-col h-full safe-top safe-bottom">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-border flex-shrink-0">
-          <button onClick={onBack} className="text-primary pressable flex items-center gap-1">
-            <span>←</span> <span className="text-sm">Back</span>
+      <div className="flex flex-col h-full safe-top">
+        {/* Nav */}
+        <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b border-border flex-shrink-0">
+          <button onClick={onBack} className="text-primary pressable text-sm font-medium">
+            ← Back
           </button>
-          <span className="text-textSecondary text-sm">All terms</span>
-          <span className="text-textSecondary text-xs">{cards.length}</span>
+          <span className="text-textSecondary text-sm font-medium">All terms</span>
+          <span className="text-textSecondary text-xs">{filtered.length}</span>
         </div>
-        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-2">
-          {cards.map(c => (
-            <div key={c.id} className="bg-surface border border-border rounded-2xl px-4 py-3 flex items-center justify-between gap-3">
+
+        {/* Search */}
+        <div className="px-4 pt-3 pb-2 flex-shrink-0">
+          <input
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            placeholder="Search..."
+            className="w-full bg-surfaceHigh rounded-2xl px-4 py-3 text-white placeholder-textSecondary outline-none border border-transparent focus:border-primary transition-colors"
+          />
+        </div>
+
+        {/* List */}
+        <div className="flex-1 overflow-y-auto px-4 py-2 space-y-2 safe-bottom">
+          {filtered.map(c => (
+            <div
+              key={c.id}
+              className="bg-surface border border-border rounded-2xl px-4 py-3.5 flex items-center gap-3"
+            >
               <div className="flex-1 min-w-0">
-                <p className="text-textPrimary text-sm font-medium">{c.english}</p>
-                <p className="text-primary text-base mt-0.5" dir="rtl" lang="ar">{c.arabic}</p>
+                <p className="text-white text-sm font-medium">{c.english}</p>
+                <p className="arabic-text text-primary text-xl mt-1">{c.arabic}</p>
                 <p className="text-textSecondary text-xs mt-0.5">{c.transliteration}</p>
               </div>
               <button
                 onClick={() => playAudio(c.audio.ar).catch(() => {})}
-                className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0 pressable"
+                className="w-10 h-10 rounded-full bg-surfaceHigh flex items-center justify-center flex-shrink-0 pressable"
                 aria-label="Play Arabic"
               >
-                <span className="text-primary text-sm">▶</span>
+                <span className="text-primary text-base">▶</span>
               </button>
             </div>
           ))}
@@ -147,224 +193,172 @@ export default function StudyScreen({ mode, onBack }: Props) {
     )
   }
 
-  // ── STUDY MODES ────────────────────────────────────────────────────────────
-  return (
-    <div className="flex flex-col h-full safe-top safe-bottom">
-      {/* Nav bar */}
-      <div className="flex items-center justify-between px-5 py-4 border-b border-border flex-shrink-0">
-        <button onClick={onBack} className="text-primary pressable flex items-center gap-1">
-          <span>←</span> <span className="text-sm">Back</span>
-        </button>
-        <span className="text-textSecondary text-sm">{modeLabel[mode]}</span>
-        <span className="text-textSecondary text-xs">{index + 1} / {cards.length}</span>
-      </div>
+  // ══════════════════════════════════════════════════════════════════════════
+  // SPEAKING MODE
+  // ══════════════════════════════════════════════════════════════════════════
 
-      {/* ── WRITE MODE ──────────────────────────────────────────────────────── */}
-      {mode === 'write' && (
-        <div className="flex-1 flex flex-col px-5 py-6 gap-4 overflow-y-auto">
+  if (mode === 'speaking') {
+    return (
+      <div className="flex flex-col h-full safe-top">
+        {/* Nav */}
+        <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b border-border flex-shrink-0">
+          <button onClick={onBack} className="text-primary pressable text-sm font-medium">← Back</button>
+          <span className="text-textSecondary text-sm font-medium">Speaking</span>
+          <span className="text-textSecondary text-xs">{index + 1} / {cards.length}</span>
+        </div>
 
-          {/* Question */}
-          <div className="bg-surface border border-border rounded-3xl p-6 min-h-[120px] flex items-center justify-center">
-            <p className="text-xl font-semibold text-center">{card.english}</p>
+        <div className="flex-1 flex flex-col px-5 py-5 gap-4 overflow-y-auto">
+
+          {/* English prompt */}
+          <div className="bg-surface border border-border rounded-3xl px-6 py-7 flex items-center justify-center" style={{ minHeight: '110px' }}>
+            <p className="text-white text-2xl font-semibold text-center leading-snug">{card.english}</p>
           </div>
 
-          {/* Result (shown after submission) */}
-          {result && (
-            <div className={`rounded-2xl p-4 border ${result.passed ? 'border-success bg-success/10' : 'border-danger bg-danger/10'}`}>
-              <p className={`font-semibold text-sm ${result.passed ? 'text-success' : 'text-danger'}`}>
-                {result.passed ? '✓ Correct!' : '✗ Incorrect'}
-              </p>
-              <p className="text-textPrimary text-lg mt-1" dir="rtl" lang="ar">{card.arabic}</p>
-              <p className="text-textSecondary text-sm">{card.transliteration}</p>
-              {!result.passed && (
-                <p className="text-textSecondary text-xs mt-2">
-                  You wrote: <span className="text-textPrimary">{result.recognised}</span>
+          {/* Result after submit */}
+          {speakResult && (
+            <div className={`fade-in rounded-2xl px-5 py-4 border ${speakResult.passed ? 'border-success/40 bg-success/10' : 'border-danger/40 bg-danger/10'}`}>
+              <div className="flex items-baseline gap-2 mb-2">
+                <span className={`font-bold text-base ${speakResult.passed ? 'text-success' : 'text-danger'}`}>
+                  {speakResult.passed ? '✓ Correct!' : '✗ Not quite'}
+                </span>
+                {!speakResult.passed && (
+                  <span className="text-textSecondary text-xs">{Math.round(speakResult.score * 100)}% match</span>
+                )}
+              </div>
+              <p className="arabic-text text-white text-2xl">{card.arabic}</p>
+              <p className="text-primary text-base mt-1">{card.transliteration}</p>
+              {!speakResult.passed && (
+                <p className="text-textSecondary text-sm mt-2">
+                  You wrote: <span className="text-white">{speakResult.recognised}</span>
                 </p>
               )}
             </div>
           )}
 
-          {/* Input (before submission) */}
-          {uiState === 'front' && (
+          {/* Input (before submit) */}
+          {!speakResult && (
             <div className="space-y-3">
-              <div className="flex bg-surface rounded-2xl p-1 gap-1 border border-border">
+              {/* Mode toggle */}
+              <div className="flex bg-surfaceHigh rounded-2xl p-1 gap-1">
                 <button
-                  onClick={() => setAnswerMode('arabic')}
-                  className={`flex-1 py-2 rounded-xl text-sm font-medium transition-colors ${answerMode === 'arabic' ? 'bg-primary text-white' : 'text-textSecondary'}`}
-                >
-                  Arabic عربي
-                </button>
-                <button
-                  onClick={() => setAnswerMode('translit')}
-                  className={`flex-1 py-2 rounded-xl text-sm font-medium transition-colors ${answerMode === 'translit' ? 'bg-primary text-white' : 'text-textSecondary'}`}
+                  onClick={() => switchAnswerMode('translit')}
+                  className={`flex-1 py-2.5 rounded-xl text-sm font-medium transition-colors ${answerMode === 'translit' ? 'bg-primary text-white' : 'text-textSecondary'}`}
                 >
                   Transliteration
                 </button>
+                <button
+                  onClick={() => switchAnswerMode('arabic')}
+                  className={`flex-1 py-2.5 rounded-xl text-sm font-medium transition-colors ${answerMode === 'arabic' ? 'bg-primary text-white' : 'text-textSecondary'}`}
+                >
+                  Arabic عربي
+                </button>
               </div>
 
-              {answerMode === 'arabic' ? (
-                <input
-                  value={arabicAnswer}
-                  onChange={e => setArabicAnswer(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && arabicAnswer.trim() && handleWriteCheck(arabicAnswer)}
-                  placeholder="اكتب هنا…"
-                  dir="rtl"
-                  lang="ar"
-                  className="w-full bg-surface border border-border rounded-2xl px-4 py-3 text-textPrimary placeholder-textSecondary text-base outline-none focus:border-primary text-right"
-                />
-              ) : (
-                <input
-                  value={typedAnswer}
-                  onChange={e => setTypedAnswer(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && typedAnswer.trim() && handleWriteCheck(typedAnswer)}
-                  placeholder="e.g. 3amla eh…"
-                  autoCorrect="off"
-                  autoCapitalize="none"
-                  autoComplete="off"
-                  spellCheck={false}
-                  className="w-full bg-surface border border-border rounded-2xl px-4 py-3 text-textPrimary placeholder-textSecondary text-sm outline-none focus:border-primary"
-                />
-              )}
+              {/* Text input */}
+              <input
+                ref={inputRef}
+                value={answer}
+                onChange={e => setAnswer(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && answer.trim() && handleCheck()}
+                placeholder={answerMode === 'arabic' ? 'اكتب هنا…' : 'e.g. bte3mel eh…'}
+                dir={answerMode === 'arabic' ? 'rtl' : 'ltr'}
+                lang={answerMode === 'arabic' ? 'ar' : 'en'}
+                autoCorrect="off"
+                autoCapitalize="none"
+                autoComplete="off"
+                spellCheck={false}
+                className={`w-full bg-surfaceHigh border border-transparent focus:border-primary rounded-2xl px-4 py-4 text-white placeholder-textSecondary outline-none transition-colors ${answerMode === 'arabic' ? 'text-right text-xl' : 'text-base'}`}
+              />
 
               <button
-                onClick={() => currentWriteInput.trim() && handleWriteCheck(currentWriteInput)}
-                disabled={!currentWriteInput.trim()}
-                className="w-full bg-primary rounded-2xl py-3 text-white font-medium pressable disabled:opacity-40"
+                onClick={handleCheck}
+                disabled={!answer.trim()}
+                className="w-full bg-primary rounded-2xl py-4 text-white font-semibold pressable disabled:opacity-40"
               >
                 Check
               </button>
             </div>
           )}
 
-          {/* SRS grading after submission */}
-          {uiState === 'revealed' && <SRSButtons onGrade={handleGrade} />}
+          {/* Next button after result */}
+          {speakResult && (
+            <button
+              onClick={handleNext}
+              className="fade-in w-full bg-surfaceHigh border border-border rounded-2xl py-4 text-white font-semibold pressable"
+            >
+              Next →
+            </button>
+          )}
 
-          <button onClick={nextCard} className="w-full text-textSecondary text-sm pressable py-1">
-            Skip →
+          <button onClick={nextCard} className="text-textSecondary text-sm text-center pressable py-2">
+            Skip
           </button>
+
         </div>
-      )}
+      </div>
+    )
+  }
 
-      {/* ── FLASHCARD / REVERSE / LISTENING / SPEAKING MODES ───────────────── */}
-      {mode !== 'write' && (
-        <div className="flex-1 flex flex-col items-center justify-between px-5 py-6 gap-6 scroll-area">
+  // ══════════════════════════════════════════════════════════════════════════
+  // FLASHCARD MODE
+  // ══════════════════════════════════════════════════════════════════════════
 
-          {/* Card */}
-          <div className="w-full max-w-sm">
+  return (
+    <div className="flex flex-col h-full safe-top">
+      {/* Nav */}
+      <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b border-border flex-shrink-0">
+        <button onClick={onBack} className="text-primary pressable text-sm font-medium">← Back</button>
+        <span className="text-textSecondary text-sm font-medium">Flashcard</span>
+        <span className="text-textSecondary text-xs">{index + 1} / {cards.length}</span>
+      </div>
+
+      <div className="flex-1 flex flex-col items-center px-5 py-6 gap-5 overflow-y-auto">
+
+        {/* Card */}
+        <div className="w-full max-w-sm flex-1 flex items-center justify-center">
+          <div className="w-full">
             <FlashCard
               card={card}
-              mode={mode}
-              isRevealed={uiState !== 'front'}
-              onTap={uiState === 'front' ? handleReveal : () => {}}
+              isRevealed={isRevealed}
+              onTap={handleReveal}
             />
           </div>
-
-          {/* Bottom section */}
-          <div className="w-full max-w-sm space-y-4 flex-shrink-0">
-
-            {/* SPEAKING MODE controls */}
-            {mode === 'speaking' && uiState === 'front' && (
-              <div className="flex flex-col items-center gap-4 w-full">
-
-                <div className="flex w-full bg-surface rounded-2xl p-1 gap-1">
-                  <button
-                    onClick={() => setAnswerMode('arabic')}
-                    className={`flex-1 py-2 rounded-xl text-sm font-medium transition-colors ${answerMode === 'arabic' ? 'bg-primary text-white' : 'text-textSecondary'}`}
-                  >
-                    Arabic عربي
-                  </button>
-                  <button
-                    onClick={() => setAnswerMode('translit')}
-                    className={`flex-1 py-2 rounded-xl text-sm font-medium transition-colors ${answerMode === 'translit' ? 'bg-primary text-white' : 'text-textSecondary'}`}
-                  >
-                    Transliteration
-                  </button>
-                </div>
-
-                {answerMode === 'arabic' && (
-                  <div className="w-full flex gap-2">
-                    <input
-                      value={arabicAnswer}
-                      onChange={e => setArabicAnswer(e.target.value)}
-                      onKeyDown={e => e.key === 'Enter' && handleSpeakingCheck(arabicAnswer)}
-                      placeholder="اكتب هنا…"
-                      dir="rtl"
-                      lang="ar"
-                      className="flex-1 bg-surface border border-border rounded-2xl px-4 py-3 text-textPrimary placeholder-textSecondary text-base outline-none focus:border-primary text-right"
-                    />
-                    <button
-                      onClick={() => handleSpeakingCheck(arabicAnswer)}
-                      disabled={!arabicAnswer.trim()}
-                      className="bg-primary rounded-2xl px-4 text-white font-medium pressable disabled:opacity-40"
-                    >
-                      Check
-                    </button>
-                  </div>
-                )}
-
-                {answerMode === 'translit' && (
-                  <div className="w-full flex gap-2">
-                    <input
-                      value={typedAnswer}
-                      onChange={e => setTypedAnswer(e.target.value)}
-                      onKeyDown={e => e.key === 'Enter' && handleSpeakingCheck(typedAnswer)}
-                      placeholder="e.g. 3amla eh…"
-                      autoCorrect="off"
-                      autoCapitalize="none"
-                      autoComplete="off"
-                      spellCheck={false}
-                      className="flex-1 bg-surface border border-border rounded-2xl px-4 py-3 text-textPrimary placeholder-textSecondary text-sm outline-none focus:border-primary"
-                    />
-                    <button
-                      onClick={() => handleSpeakingCheck(typedAnswer)}
-                      disabled={!typedAnswer.trim()}
-                      className="bg-primary rounded-2xl px-4 text-white font-medium pressable disabled:opacity-40"
-                    >
-                      Check
-                    </button>
-                  </div>
-                )}
-
-                {result && !result.passed && (
-                  <div className="text-center space-y-1">
-                    <p className="text-danger text-sm">Not quite — try again</p>
-                    <p className="text-textSecondary text-xs">Match: {Math.round(result.score * 100)}%</p>
-                    <button
-                      onClick={() => { setUiState('revealed'); playAudio(card.audio.ar).catch(() => {}) }}
-                      className="text-textSecondary text-xs underline pressable"
-                    >
-                      Show answer
-                    </button>
-                  </div>
-                )}
-                {result?.passed && (
-                  <p className="text-success text-sm font-medium text-center">
-                    Correct! ({Math.round(result.score * 100)}% match)
-                  </p>
-                )}
-              </div>
-            )}
-
-            {/* Reveal button for flashcard / reverse / listening */}
-            {mode !== 'speaking' && uiState === 'front' && (
-              <button
-                onClick={handleReveal}
-                className="w-full bg-surface border border-border rounded-2xl py-4 text-white font-medium pressable"
-              >
-                Tap to reveal
-              </button>
-            )}
-
-            {/* SRS grading */}
-            {uiState === 'revealed' && <SRSButtons onGrade={handleGrade} />}
-
-            {/* Skip */}
-            <button onClick={nextCard} className="w-full text-textSecondary text-sm pressable py-1">
-              Skip →
-            </button>
-          </div>
         </div>
-      )}
+
+        {/* Bottom controls */}
+        <div className="w-full max-w-sm space-y-3 flex-shrink-0 pb-2">
+          {!isRevealed && (
+            <button
+              onClick={handleReveal}
+              className="w-full bg-surface border border-border rounded-2xl py-4 text-textSecondary font-medium pressable"
+            >
+              Reveal
+            </button>
+          )}
+
+          {isRevealed && (
+            <div className="slide-up grid grid-cols-2 gap-3">
+              <button
+                onClick={() => handleGrade(false)}
+                className="bg-danger/15 border border-danger/30 rounded-2xl py-4 text-danger font-semibold text-base pressable"
+              >
+                ✗  Missed it
+              </button>
+              <button
+                onClick={() => handleGrade(true)}
+                className="bg-success/15 border border-success/30 rounded-2xl py-4 text-success font-semibold text-base pressable"
+              >
+                ✓  Got it
+              </button>
+            </div>
+          )}
+
+          <button onClick={nextCard} className="w-full text-textSecondary text-sm text-center pressable py-2">
+            Skip
+          </button>
+        </div>
+
+      </div>
     </div>
   )
 }

@@ -6,96 +6,72 @@ interface Props {
   onAdmin: () => void
 }
 
-const MODES: { id: StudyMode; label: string; description: string; icon: string }[] = [
-  {
-    id: 'browse',
-    label: 'See all terms',
-    description: 'Browse every card in the deck',
-    icon: '📋',
-  },
-  {
-    id: 'flashcard',
-    label: 'Flashcard',
-    description: 'See English → reveal Arabic',
-    icon: '🃏',
-  },
-  {
-    id: 'write',
-    label: 'Write',
-    description: 'See English → write Arabic',
-    icon: '✍️',
-  },
-  {
-    id: 'reverse',
-    label: 'Reverse',
-    description: 'See Arabic → reveal English',
-    icon: '🔄',
-  },
-  {
-    id: 'listening',
-    label: 'Listening',
-    description: 'Hear Arabic → guess meaning',
-    icon: '👂',
-  },
-  {
-    id: 'speaking',
-    label: 'Speaking',
-    description: 'See English → type Arabic',
-    icon: '🎤',
-  },
-]
-
 export default function HomeScreen({ onStartStudy, onAdmin }: Props) {
   return (
     <div className="flex flex-col h-full safe-top safe-bottom">
       {/* Header */}
-      <div className="flex items-center justify-between px-5 py-4 border-b border-border">
+      <div className="flex items-center justify-between px-5 py-4 border-b border-border flex-shrink-0">
         <div>
-          <div className="text-lg font-semibold">Egyptian Arabic</div>
-          <div className="text-textSecondary text-xs">{cards.length} cards</div>
+          <h1 className="text-lg font-semibold text-white">Egyptian Arabic</h1>
+          <p className="text-textSecondary text-xs mt-0.5">{cards.length} cards · Essentials</p>
         </div>
         <button
           onClick={onAdmin}
-          className="text-primary text-2xl pressable leading-none"
-          aria-label="Add card"
+          className="w-9 h-9 rounded-full bg-surfaceHigh flex items-center justify-center text-primary text-xl pressable leading-none"
+          aria-label="Manage cards"
         >
           +
         </button>
       </div>
 
-      {/* Content */}
-      <div className="flex-1 scroll-area px-5 py-6 space-y-6">
-        {/* Deck card */}
-        <div className="bg-surface rounded-3xl p-5 border border-border">
-          <div className="text-xs text-textSecondary uppercase tracking-wider font-medium mb-2">Current deck</div>
-          <div className="text-xl font-semibold">Essentials</div>
-          <div className="text-textSecondary text-sm mt-1">Core phrases for daily conversation</div>
-        </div>
+      {/* Modes */}
+      <div className="flex-1 scroll-area px-5 py-6 space-y-3">
 
-        {/* Study modes */}
-        <div>
-          <div className="text-textSecondary text-xs uppercase tracking-wider font-medium mb-3 px-1">
-            Study modes
+        {/* Flashcard — primary */}
+        <button
+          onClick={() => onStartStudy('flashcard')}
+          className="w-full bg-primary/10 border border-primary/20 rounded-3xl px-5 py-5 flex items-center gap-4 pressable text-left"
+        >
+          <div className="w-12 h-12 rounded-2xl bg-primary/20 flex items-center justify-center flex-shrink-0 text-2xl">
+            🃏
           </div>
-          <div className="space-y-2">
-            {MODES.map(mode => (
-              <button
-                key={mode.id}
-                onClick={() => onStartStudy(mode.id)}
-                className="w-full bg-surface border border-border rounded-3xl px-5 py-4 flex items-center gap-4 pressable text-left"
-              >
-                <span className="text-2xl">{mode.icon}</span>
-                <div className="flex-1 min-w-0">
-                  <div className="font-semibold text-base">{mode.label}</div>
-                  <div className="text-textSecondary text-sm truncate">{mode.description}</div>
-                </div>
-                <svg className="w-5 h-5 text-textTertiary flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                </svg>
-              </button>
-            ))}
+          <div className="flex-1 min-w-0">
+            <p className="font-semibold text-white text-base">Flashcard</p>
+            <p className="text-primary/80 text-sm mt-0.5">English → hear & reveal Arabic</p>
           </div>
-        </div>
+          <span className="text-primary opacity-60 text-lg">›</span>
+        </button>
+
+        {/* Speaking */}
+        <button
+          onClick={() => onStartStudy('speaking')}
+          className="w-full bg-surface border border-border rounded-3xl px-5 py-5 flex items-center gap-4 pressable text-left"
+        >
+          <div className="w-12 h-12 rounded-2xl bg-success/15 flex items-center justify-center flex-shrink-0 text-2xl">
+            ✍️
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="font-semibold text-white text-base">Speaking</p>
+            <p className="text-textSecondary text-sm mt-0.5">Type or dictate your answer</p>
+          </div>
+          <span className="text-textTertiary text-lg">›</span>
+        </button>
+
+        {/* Browse */}
+        <button
+          onClick={() => onStartStudy('browse')}
+          className="w-full bg-surface border border-border rounded-3xl px-5 py-5 flex items-center gap-4 pressable text-left"
+        >
+          <div className="w-12 h-12 rounded-2xl bg-surfaceHigh flex items-center justify-center flex-shrink-0 text-2xl">
+            📋
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="font-semibold text-white text-base">Browse all terms</p>
+            <p className="text-textSecondary text-sm mt-0.5">Search, listen, explore</p>
+          </div>
+          <span className="text-textTertiary text-lg">›</span>
+        </button>
+
       </div>
     </div>
   )

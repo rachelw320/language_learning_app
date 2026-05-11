@@ -12,7 +12,7 @@
 
 html, body, #root {
   height: 100%;
-  height: 100dvh; /* dynamic viewport height — handles iPhone keyboard */
+  height: 100dvh;
   background-color: #000;
   color: #fff;
   overscroll-behavior: none;
@@ -30,56 +30,29 @@ body {
   overflow: hidden;
 }
 
+/* ── Prevent iPhone auto-zoom on input focus ─────────────────── */
+/* Safari zooms the viewport when an input's font-size < 16px    */
+input, textarea, select {
+  font-size: 16px;
+}
+
 /* ── Safe area helpers (iPhone notch / home bar) ─────────────── */
 .safe-top    { padding-top: env(safe-area-inset-top); }
 .safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
-.safe-top-margin    { margin-top: env(safe-area-inset-top); }
-.safe-bottom-margin { margin-bottom: env(safe-area-inset-bottom); }
 
-/* ── Card flip animation ─────────────────────────────────────── */
-.card-scene {
-  perspective: 1200px;
-  width: 100%;
+/* ── Fade-in animation (card content reveal) ─────────────────── */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(5px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
+.fade-in { animation: fadeIn 0.2s ease forwards; }
 
-.card-body {
-  position: relative;
-  width: 100%;
-  transform-style: preserve-3d;
-  transition: transform 0.45s cubic-bezier(0.4, 0, 0.2, 1);
-  will-change: transform;
-}
-
-.card-body.is-flipped {
-  transform: rotateY(180deg);
-}
-
-.card-face {
-  backface-visibility: hidden;
-  -webkit-backface-visibility: hidden;
-}
-
-.card-face-back {
-  position: absolute;
-  inset: 0;
-  transform: rotateY(180deg);
-  backface-visibility: hidden;
-  -webkit-backface-visibility: hidden;
-}
-
-/* ── Slide-up reveal for SRS buttons ────────────────────────── */
+/* ── Slide-up animation (grade buttons) ─────────────────────── */
 @keyframes slideUp {
-  from { transform: translateY(24px); opacity: 0; }
+  from { transform: translateY(20px); opacity: 0; }
   to   { transform: translateY(0);    opacity: 1; }
 }
-.slide-up { animation: slideUp 0.28s ease forwards; }
-
-/* ── Mic pulse animation ─────────────────────────────────────── */
-@keyframes micPulse {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 69, 58, 0.6); }
-  50%       { box-shadow: 0 0 0 18px rgba(255, 69, 58, 0); }
-}
-.mic-recording { animation: micPulse 1.2s ease infinite; }
+.slide-up { animation: slideUp 0.25s ease forwards; }
 
 /* ── Arabic text direction ───────────────────────────────────── */
 .arabic-text {
