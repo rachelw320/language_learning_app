@@ -1,40 +1,35 @@
-export type StudyMode = 'flashcard' | 'speaking' | 'browse'
+export type StudyMode = 'flashcard' | 'writing' | 'browse'
 
-export type Screen = 'home' | 'study' | 'admin'
+export type AppScreen =
+  | { type: 'home' }
+  | { type: 'category'; categoryName: string }
+  | { type: 'study'; mode: StudyMode; category: string; chunkIndex: number; cards: Card[] }
+  | { type: 'summary'; mode: StudyMode; category: string; chunkIndex: number; correct: Card[]; incorrect: Card[]; allCards: Card[] }
+  | { type: 'admin' }
 
 export interface Card {
   id: string
-  deck: string
+  category: string
+  order: number
+  deck?: string
   english: string
   arabic: string
   transliteration: string
-  accepted: string[]          // all accepted answer variants for fuzzy matching
-  arabicVariants: string[]    // alternative Arabic spellings Whisper might return
-  audio: {
-    ar: string                // path to Egyptian Arabic audio
-    en: string                // path to English audio
-  }
+  accepted: string[]
+  arabicVariants: string[]
+  audio: { ar: string; en: string }
   tags: string[]
   notes: string
 }
 
-// SM-2 spaced repetition progress per card per user
 export interface CardProgress {
   cardId: string
-  intervalDays: number        // days until next review
-  easeFactor: number          // how easy (1.3–2.5+)
-  dueDate: string             // ISO date string
-  reps: number                // total successful reps
-  lapses: number              // times forgotten
+  intervalDays: number
+  easeFactor: number
+  dueDate: string
+  reps: number
+  lapses: number
   lastReviewed: string | null
 }
 
-// 1=Again, 2=Hard, 3=Good, 4=Easy
 export type SRSGrade = 1 | 2 | 3 | 4
-
-export interface SpeakingResult {
-  recognised: string
-  score: number
-  passed: boolean
-  matchedVariant: string
-}

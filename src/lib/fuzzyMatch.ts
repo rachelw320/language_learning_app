@@ -41,6 +41,19 @@ interface MatchResult {
 // THRESHOLD: how similar the answer needs to be to pass (0–1)
 const PASS_THRESHOLD = 0.72
 
+// Simple normalizer for English answers — lowercase only
+function normalizeEnglish(text: string): string {
+  return text.toLowerCase().replace(/[''`]/g, '').replace(/\s+/g, ' ').trim()
+}
+
+export function checkEnglish(userInput: string, expected: string): { score: number; passed: boolean } {
+  const a = normalizeEnglish(userInput)
+  const b = normalizeEnglish(expected)
+  if (a === b) return { score: 1, passed: true }
+  const score = similarity(a, b)
+  return { score, passed: score >= PASS_THRESHOLD }
+}
+
 export function checkAnswer(
   userInput: string,
   accepted: string[],

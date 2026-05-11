@@ -1,38 +1,95 @@
 import { useState } from 'react'
-import type { Screen, StudyMode } from './types'
+import type { AppScreen } from './types'
 import HomeScreen from './components/HomeScreen'
+import CategoryScreen from './components/CategoryScreen'
 import StudyScreen from './components/StudyScreen'
+import SummaryScreen from './components/SummaryScreen'
 import AdminScreen from './components/AdminScreen'
 
 export default function App() {
-  const [screen, setScreen] = useState<Screen>('home')
-  const [studyMode, setStudyMode] = useState<StudyMode>('flashcard')
-
-  const handleStartStudy = (mode: StudyMode) => {
-    setStudyMode(mode)
-    setScreen('study')
-  }
+  const [screen, setScreen] = useState<AppScreen>({ type: 'home' })
 
   return (
     <div className="h-full bg-bg text-textPrimary overflow-hidden">
-      {screen === 'home' && (
+      {screen.type === 'home' && (
         <HomeScreen
-          onStartStudy={handleStartStudy}
-          onAdmin={() => setScreen('admin')}
+          onCategory={name => setScreen({ type: 'category', categoryName: name })}
+          onAdmin={() => setScreen({ type: 'admin' })}
         />
       )}
 
-      {screen === 'study' && (
+      {screen.type === 'category' && (
+        <CategoryScreen
+          categoryName={screen.categoryName}
+          onBack={() => setScreen({ type: 'home' })}
+          onStart={(mode, category, chunkIndex, cards) =>
+            setScreen({ type: 'study', mode, category, chunkIndex, cards })
+          }
+        />
+      )}
+
+      {screen.type === 'study' && (
         <StudyScreen
-          mode={studyMode}
-          onBack={() => setScreen('home')}
+          mode={screen.mode}
+          category={screen.category}
+          chunkIndex={screen.chunkIndex}
+          cards={screen.cards}
+          onBack={() => setScreen({ type: 'category', categoryName: screen.category })}
+          onComplete={(correct, incorrect) =>
+            setScreen({
+              type: 'summary',
+              mode: screen.mode,
+              category: screen.category,
+              chunkIndex: screen.chunkIndex,
+              correct,
+              incorrect,
+              allCards: screen.cards,
+            })
+          }
         />
       )}
 
-      {screen === 'admin' && (
-        <AdminScreen
-          onBack={() => setScreen('home')}
+      {screen.type === 'summary' && (
+        <SummaryScreen
+          mode={screen.mode}
+          category={screen.category}
+          chunkIndex={screen.chunkIndex}
+          correct={screen.correct}
+          incorrect={screen.incorrect}
+          allCards={screen.allCards}
+          onRetry={() =>
+            setScreen({
+              type: 'study',
+              mode: screen.mode,
+              category: screen.category,
+              chunkIndex: screen.chunkIndex,
+              cards: screen.allCards,
+            })
+          }
+          onReviewWrong={() =>
+            setScreen({
+              type: 'study',
+              mode: screen.mode,
+              category: screen.category,
+              chunkIndex: screen.chunkIndex,
+              cards: screen.incorrect,
+            })
+          }
+          onNextSet={(nextChunkIndex, nextCards) =>
+            setScreen({
+              type: 'study',
+              mode: screen.mode,
+              category: screen.category,
+              chunkIndex: nextChunkIndex,
+              cards: nextCards,
+            })
+          }
+          onBack={() => setScreen({ type: 'category', categoryName: screen.category })}
         />
+      )}
+
+      {screen.type === 'admin' && (
+        <AdminScreen onBack={() => setScreen({ type: 'home' })} />
       )}
     </div>
   )
