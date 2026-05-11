@@ -1,8 +1,8 @@
 import allCards from '../data/cards.json'
 import type { Card, StudyMode } from '../types'
 import {
-  getCardsForCategory, getChunk, getChunkCount,
-  isVerbCategory, getVerbGroups, shuffle,
+  getCardsForCategory,
+  isVerbCategory, getVerbGroups, getTagGroups, shuffle,
 } from '../lib/chunks'
 import { isDismissed } from '../lib/srs'
 import { loadProgress } from '../lib/progress'
@@ -18,12 +18,13 @@ const allCardsTyped = allCards as Card[]
 export default function CategoryScreen({ categoryName, onBack, onStart }: Props) {
   const progress = loadProgress()
   const rawCatCards = getCardsForCategory(allCardsTyped, categoryName)
-  // Filter dismissed cards (resurface after 7 days automatically)
   const catCards = rawCatCards.filter(c => !isDismissed(progress[c.id]))
 
   const isVerb = isVerbCategory(catCards)
   const verbGroups = isVerb ? getVerbGroups(catCards) : []
-  const chunkCount = isVerb ? 0 : getChunkCount(catCards)
+  const tagGroups = !isVerb ? getTagGroups(catCards) : []
+  // Only show topic groups when there are multiple groups with real content
+  const showTagGroups = tagGroups.length >= 2 && tagGroups.some(g => g.cards.length >= 2)
 
   const start = (mode: StudyMode, chunkIndex: number, cards: Card[], isMix?: boolean) => {
     onStart(mode, categoryName, chunkIndex, cards, isMix)
@@ -45,7 +46,7 @@ export default function CategoryScreen({ categoryName, onBack, onStart }: Props)
           <p className="text-textSecondary text-xs font-medium uppercase tracking-wider px-1">Study mode</p>
 
           <button
-            onClick={() => start('flashcard', 0, isVerb ? shuffle(catCards) : getChunk(catCards, 0), isVerb)}
+            onClick={() => start('flashcard', 0, shuffle(catCards), true)}
             className="w-full bg-primary/10 border border-primary/20 rounded-3xl px-5 py-5 flex items-center gap-4 pressable text-left"
           >
             <div className="w-12 h-12 rounded-2xl bg-primary/20 flex items-center justify-center flex-shrink-0 text-2xl">🔊</div>
@@ -57,7 +58,7 @@ export default function CategoryScreen({ categoryName, onBack, onStart }: Props)
           </button>
 
           <button
-            onClick={() => start('writing', 0, isVerb ? shuffle(catCards) : getChunk(catCards, 0), isVerb)}
+            onClick={() => start('writing', 0, shuffle(catCards), true)}
             className="w-full bg-surface border border-border rounded-3xl px-5 py-5 flex items-center gap-4 pressable text-left"
           >
             <div className="w-12 h-12 rounded-2xl bg-success/15 flex items-center justify-center flex-shrink-0 text-2xl">✍️</div>
@@ -79,6 +80,16 @@ export default function CategoryScreen({ categoryName, onBack, onStart }: Props)
             </div>
             <span className="text-textTertiary text-lg">›</span>
           </button>
+
+          {/* Fill in the Gaps — coming soon */}
+          <div className="w-full bg-surface border border-border rounded-3xl px-5 py-5 flex items-center gap-4 opacity-40 cursor-not-allowed">
+            <div className="w-12 h-12 rounded-2xl bg-surfaceHigh flex items-center justify-center flex-shrink-0 text-2xl">✏️</div>
+            <div className="flex-1 min-w-0">
+              <p className="font-semibold text-white text-base">Fill in the Gaps</p>
+              <p className="text-textSecondary text-sm mt-0.5">Complete sentences · coming soon</p>
+            </div>
+            <span className="text-xs text-textTertiary bg-surfaceHigh rounded-lg px-2 py-1 flex-shrink-0">soon</span>
+          </div>
         </div>
 
         {/* ── VERB GROUPS ───────────────────────────────────────────────────── */}
@@ -115,11 +126,11 @@ export default function CategoryScreen({ categoryName, onBack, onStart }: Props)
           </div>
         )}
 
-        {/* ── FLAT CHUNK PICKER (non-verb categories) ───────────────────────── */}
-        {!isVerb && chunkCount > 1 && (
+        {/* ── TAG GROUPS (non-verb categories) ──────────────────────────────── */}
+        {!isVerb && showTagGroups && (
           <div className="space-y-3">
             <div className="flex items-center justify-between px-1">
-              <p className="text-textSecondary text-xs font-medium uppercase tracking-wider">Jump to set</p>
+              <p className="text-textSecondary text-xs font-medium uppercase tracking-wider">By topic</p>
               <button
                 onClick={() => start('flashcard', 0, shuffle(catCards), true)}
                 className="flex items-center gap-1.5 bg-primary/10 border border-primary/20 rounded-xl px-3 py-1.5 text-primary text-xs font-semibold pressable"
@@ -127,20 +138,25 @@ export default function CategoryScreen({ categoryName, onBack, onStart }: Props)
                 🔀 Mix all
               </button>
             </div>
-            <div className="grid grid-cols-3 gap-2">
-              {Array.from({ length: chunkCount }, (_, i) => (
+
+            <div className="space-y-2">
+              {tagGroups.map(group => (
                 <button
-                  key={i}
-                  onClick={() => start('flashcard', i, getChunk(catCards, i))}
-                  className="bg-surface border border-border rounded-2xl py-3 px-2 flex flex-col items-center gap-0.5 pressable"
+                  key={group.tag}
+                  onClick={() => start('flashcard', 0, group.cards)}
+                  className="w-full bg-surface border border-border rounded-2xl px-4 py-3.5 flex items-center gap-3 pressable text-left"
                 >
-                  <span className="text-white text-sm font-semibold">Set {i + 1}</span>
-                  <span className="text-textSecondary text-xs">{getChunk(catCards, i).length} cards</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-white text-sm font-semibold">{group.label}</p>
+                    <p className="text-textSecondary text-xs mt-0.5">{group.cards.length} cards</p>
+                  </div>
+                  <span className="text-textTertiary text-lg">›</span>
                 </button>
               ))}
             </div>
           </div>
         )}
+
       </div>
     </div>
   )

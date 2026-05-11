@@ -42,6 +42,28 @@ export function shuffle<T>(arr: T[]): T[] {
   return a
 }
 
+// ── Tag grouping (non-verb categories) ────────────────────────────────────────
+
+export interface TagGroup {
+  tag: string
+  label: string  // capitalized tag, e.g., "Greetings"
+  cards: Card[]
+}
+
+export function getTagGroups(cards: Card[]): TagGroup[] {
+  const groupMap = new Map<string, Card[]>()
+  for (const c of cards) {
+    const tag = c.tags[1] ?? 'other'
+    if (!groupMap.has(tag)) groupMap.set(tag, [])
+    groupMap.get(tag)!.push(c)
+  }
+  return Array.from(groupMap.entries()).map(([tag, groupCards]) => ({
+    tag,
+    label: tag.charAt(0).toUpperCase() + tag.slice(1),
+    cards: groupCards.sort((a, b) => a.order - b.order),
+  }))
+}
+
 // ── Verb grouping ──────────────────────────────────────────────────────────────
 
 export interface VerbGroup {
