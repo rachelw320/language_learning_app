@@ -1,11 +1,9 @@
 import type { Card, StudyMode } from '../types'
-import allCardsJson from '../data/cards.json'
 import { getCardsForCategory, getChunk, getChunkCount } from '../lib/chunks'
 import { playAudio } from './AudioButton'
 
-const allCards = allCardsJson as Card[]
-
 interface Props {
+  cards: Card[]
   mode: StudyMode
   category: string
   chunkIndex: number
@@ -20,6 +18,7 @@ interface Props {
 }
 
 export default function SummaryScreen({
+  cards,
   mode,
   category,
   chunkIndex,
@@ -36,7 +35,7 @@ export default function SummaryScreen({
   const score = total > 0 ? Math.round((correct.length / total) * 100) : 0
   const passed = score >= 80
 
-  const catCards = getCardsForCategory(allCards, category)
+  const catCards = getCardsForCategory(cards, category)
   const totalChunks = getChunkCount(catCards)
   const hasNextSet = !isMix && chunkIndex + 1 < totalChunks
   const nextChunkCards = hasNextSet ? getChunk(catCards, chunkIndex + 1) : []

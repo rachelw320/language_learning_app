@@ -1,14 +1,12 @@
-import allCards from '../data/cards.json'
 import type { Card } from '../types'
 import { getCategories, getCardsForCategory } from '../lib/chunks'
 import { loadProgress } from '../lib/progress'
 
 interface Props {
+  cards: Card[]
   onCategory: (name: string) => void
   onAdmin: () => void
 }
-
-const cards = allCards as Card[]
 
 const CATEGORY_EMOJI: Record<string, string> = {
   'Top 50 Essentials': '⭐',
@@ -17,7 +15,7 @@ const CATEGORY_EMOJI: Record<string, string> = {
 
 const RECENT_COUNT = 6
 
-export default function HomeScreen({ onCategory, onAdmin }: Props) {
+export default function HomeScreen({ cards, onCategory, onAdmin }: Props) {
   const categories = getCategories(cards)
   const progress = loadProgress()
 

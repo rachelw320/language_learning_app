@@ -1,4 +1,3 @@
-import allCards from '../data/cards.json'
 import type { Card, StudyMode } from '../types'
 import {
   getCardsForCategory,
@@ -8,16 +7,15 @@ import { isDismissed } from '../lib/srs'
 import { loadProgress } from '../lib/progress'
 
 interface Props {
+  cards: Card[]
   categoryName: string
   onBack: () => void
   onStart: (mode: StudyMode, category: string, chunkIndex: number, cards: Card[], isMix?: boolean) => void
 }
 
-const allCardsTyped = allCards as Card[]
-
-export default function CategoryScreen({ categoryName, onBack, onStart }: Props) {
+export default function CategoryScreen({ cards: allCards, categoryName, onBack, onStart }: Props) {
   const progress = loadProgress()
-  const rawCatCards = getCardsForCategory(allCardsTyped, categoryName)
+  const rawCatCards = getCardsForCategory(allCards, categoryName)
   const catCards = rawCatCards.filter(c => !isDismissed(progress[c.id]))
 
   const isVerb = isVerbCategory(catCards)
