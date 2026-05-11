@@ -36,7 +36,7 @@ function rowToCard(row: SupabaseRow): Card {
   }
 }
 
-const CACHE_KEY = 'ea_cards_v1'
+const CACHE_KEY = 'ea_cards_v2'
 
 export function getInitialCards(): Card[] {
   try {
