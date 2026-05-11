@@ -10,6 +10,7 @@ export type AppScreen =
 export interface Card {
   id: string
   category: string
+  additionalCategories?: string[]  // card appears in these categories too; mastery shared by card ID
   order: number
   deck?: string
   english: string

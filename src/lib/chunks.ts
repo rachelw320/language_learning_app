@@ -2,20 +2,26 @@ import type { Card } from '../types'
 
 export const CHUNK_SIZE = 15
 
+function cardCategories(c: Card): string[] {
+  return c.additionalCategories ? [c.category, ...c.additionalCategories] : [c.category]
+}
+
 export function getCategories(cards: Card[]): string[] {
   const seen = new Set<string>()
   const result: string[] = []
   for (const c of cards) {
-    if (!seen.has(c.category)) {
-      seen.add(c.category)
-      result.push(c.category)
+    for (const cat of cardCategories(c)) {
+      if (!seen.has(cat)) {
+        seen.add(cat)
+        result.push(cat)
+      }
     }
   }
   return result
 }
 
 export function getCardsForCategory(cards: Card[], category: string): Card[] {
-  return cards.filter(c => c.category === category).sort((a, b) => a.order - b.order)
+  return cards.filter(c => cardCategories(c).includes(category)).sort((a, b) => a.order - b.order)
 }
 
 export function getChunkCount(cards: Card[]): number {
