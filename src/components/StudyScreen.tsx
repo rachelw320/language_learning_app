@@ -1,5 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
-import type { User } from '@supabase/supabase-js'
+import { useState, useEffect } from 'react'
 import type { Card, CardProgress, StudyMode, SRSGrade, SpeakingResult } from '../types'
 import { supabase } from '../lib/supabase'
 import { calculateNextReview, newCardProgress } from '../lib/srs'
@@ -9,19 +8,29 @@ import FlashCard from './FlashCard'
 import SRSButtons from './SRSButtons'
 import allCards from '../data/cards.json'
 
+const PROGRESS_KEY = 'ea_srs_progress'
+
+function loadProgress(): Record<string, CardProgress> {
+  try { return JSON.parse(localStorage.getItem(PROGRESS_KEY) ?? '{}') }
+  catch { return {} }
+}
+
+function saveProgress(map: Record<string, CardProgress>) {
+  localStorage.setItem(PROGRESS_KEY, JSON.stringify(map))
+}
+
 interface Props {
-  user: User
   mode: StudyMode
   onBack: () => void
 }
 
-type UIState = 'front' | 'revealed' | 'graded'
+type UIState = 'front' | 'revealed'
 
-export default function StudyScreen({ user, mode, onBack }: Props) {
+export default function StudyScreen({ mode, onBack }: Props) {
   const [cards, setCards] = useState<Card[]>(allCards as Card[])
   const [index, setIndex] = useState(0)
   const [uiState, setUiState] = useState<UIState>('front')
-  const [progress, setProgress] = useState<Record<string, CardProgress>>({})
+  const [progress, setProgress] = useState<Record<string, CardProgress>>(loadProgress)
   const [answerMode, setAnswerMode] = useState<'arabic' | 'translit'>('arabic')
   const [arabicAnswer, setArabicAnswer] = useState('')
   const [typedAnswer, setTypedAnswer] = useState('')
@@ -29,7 +38,7 @@ export default function StudyScreen({ user, mode, onBack }: Props) {
 
   const card = cards[index]
 
-  // Load any custom cards added via admin screen
+  // Merge in any custom cards from Supabase
   useEffect(() => {
     supabase.from('cards').select('*').then(({ data }) => {
       if (data && data.length > 0) {
@@ -39,7 +48,7 @@ export default function StudyScreen({ user, mode, onBack }: Props) {
           english:         row.english,
           arabic:          row.arabic,
           transliteration: row.transliteration,
-          accepted:        row.accepted  ?? [row.transliteration],
+          accepted:        row.accepted ?? [row.transliteration],
           arabicVariants:  row.arabic_variants ?? [row.arabic],
           audio:           { ar: row.audio_ar ?? '', en: row.audio_en ?? '' },
           tags:            [],
@@ -50,58 +59,18 @@ export default function StudyScreen({ user, mode, onBack }: Props) {
     })
   }, [])
 
-  // Load SRS progress from Supabase on mount
-  useEffect(() => {
-    supabase
-      .from('user_progress')
-      .select('*')
-      .eq('user_id', user.id)
-      .then(({ data }) => {
-        if (data) {
-          const map: Record<string, CardProgress> = {}
-          for (const row of data) {
-            map[row.card_id] = {
-              cardId: row.card_id,
-              intervalDays: row.interval_days,
-              easeFactor: row.ease_factor,
-              dueDate: row.due_date,
-              reps: row.reps,
-              lapses: row.lapses,
-              lastReviewed: row.last_reviewed,
-            }
-          }
-          setProgress(map)
-        }
-      })
-  }, [user.id])
-
-  const saveProgress = useCallback(async (updated: CardProgress) => {
-    await supabase.from('user_progress').upsert({
-      user_id: user.id,
-      card_id: updated.cardId,
-      interval_days: updated.intervalDays,
-      ease_factor: updated.easeFactor,
-      due_date: updated.dueDate,
-      reps: updated.reps,
-      lapses: updated.lapses,
-      last_reviewed: updated.lastReviewed,
-    }, { onConflict: 'user_id,card_id' })
-  }, [user.id])
-
   const handleReveal = async () => {
     setUiState('revealed')
-    // Auto-play the answer audio after revealing
-    const audioSrc = (mode === 'reverse' || mode === 'listening')
-      ? card.audio.en
-      : card.audio.ar
-    try { await playAudio(audioSrc) } catch { /* file may not exist yet */ }
+    const audioSrc = (mode === 'reverse' || mode === 'listening') ? card.audio.en : card.audio.ar
+    try { await playAudio(audioSrc) } catch { /* audio may not exist yet */ }
   }
 
-  const handleGrade = async (grade: SRSGrade) => {
+  const handleGrade = (grade: SRSGrade) => {
     const existing = progress[card.id] ?? newCardProgress(card.id)
-    const updated = calculateNextReview(existing, grade)
-    setProgress(prev => ({ ...prev, [card.id]: updated }))
-    await saveProgress(updated)
+    const updated  = calculateNextReview(existing, grade)
+    const next     = { ...progress, [card.id]: updated }
+    setProgress(next)
+    saveProgress(next)
     nextCard()
   }
 
@@ -124,9 +93,9 @@ export default function StudyScreen({ user, mode, onBack }: Props) {
 
   const modeLabel: Record<StudyMode, string> = {
     flashcard: 'Flashcard',
-    reverse: 'Reverse',
+    reverse:   'Reverse',
     listening: 'Listening',
-    speaking: 'Speaking',
+    speaking:  'Speaking',
   }
 
   return (
@@ -160,7 +129,6 @@ export default function StudyScreen({ user, mode, onBack }: Props) {
           {mode === 'speaking' && uiState === 'front' && (
             <div className="flex flex-col items-center gap-4 w-full">
 
-              {/* Tab switcher */}
               <div className="flex w-full bg-surface rounded-2xl p-1 gap-1">
                 <button
                   onClick={() => setAnswerMode('arabic')}
@@ -180,7 +148,6 @@ export default function StudyScreen({ user, mode, onBack }: Props) {
                 </button>
               </div>
 
-              {/* Arabic input — use iPhone Arabic keyboard mic for STT */}
               {answerMode === 'arabic' && (
                 <div className="w-full flex gap-2">
                   <input
@@ -202,7 +169,6 @@ export default function StudyScreen({ user, mode, onBack }: Props) {
                 </div>
               )}
 
-              {/* Transliteration input — autocorrect fully disabled */}
               {answerMode === 'translit' && (
                 <div className="w-full flex gap-2">
                   <input
@@ -229,9 +195,7 @@ export default function StudyScreen({ user, mode, onBack }: Props) {
               {speakingResult && !speakingResult.passed && (
                 <div className="text-center space-y-1">
                   <p className="text-danger text-sm">Not quite — try again</p>
-                  <p className="text-textSecondary text-xs">
-                    Match: {Math.round(speakingResult.score * 100)}%
-                  </p>
+                  <p className="text-textSecondary text-xs">Match: {Math.round(speakingResult.score * 100)}%</p>
                   <button
                     onClick={() => { setUiState('revealed'); playAudio(card.audio.ar).catch(() => {}) }}
                     className="text-textSecondary text-xs underline pressable"
@@ -258,16 +222,13 @@ export default function StudyScreen({ user, mode, onBack }: Props) {
             </button>
           )}
 
-          {/* SRS grading (shown after reveal) */}
+          {/* SRS grading */}
           {uiState === 'revealed' && (
             <SRSButtons onGrade={handleGrade} />
           )}
 
-          {/* Skip button */}
-          <button
-            onClick={nextCard}
-            className="w-full text-textSecondary text-sm pressable py-1"
-          >
+          {/* Skip */}
+          <button onClick={nextCard} className="w-full text-textSecondary text-sm pressable py-1">
             Skip →
           </button>
         </div>

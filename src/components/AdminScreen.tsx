@@ -1,9 +1,7 @@
 import { useState, useRef } from 'react'
-import type { User } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
 
 interface Props {
-  user: User
   onBack: () => void
 }
 

@@ -1,6 +1,6 @@
 export type StudyMode = 'flashcard' | 'reverse' | 'listening' | 'speaking'
 
-export type Screen = 'auth' | 'home' | 'study' | 'admin'
+export type Screen = 'home' | 'study' | 'admin'
 
 export interface Card {
   id: string

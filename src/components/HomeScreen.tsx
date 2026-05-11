@@ -1,11 +1,8 @@
-import type { User } from '@supabase/supabase-js'
 import type { StudyMode } from '../types'
 import cards from '../data/cards.json'
 
 interface Props {
-  user: User
   onStartStudy: (mode: StudyMode) => void
-  onSignOut: () => void
   onAdmin: () => void
 }
 
@@ -31,47 +28,34 @@ const MODES: { id: StudyMode; label: string; description: string; icon: string }
   {
     id: 'speaking',
     label: 'Speaking',
-    description: 'See English → speak Arabic',
+    description: 'See English → type Arabic',
     icon: '🎤',
   },
 ]
 
-export default function HomeScreen({ user, onStartStudy, onSignOut, onAdmin }: Props) {
-  const totalCards = cards.length
-
+export default function HomeScreen({ onStartStudy, onAdmin }: Props) {
   return (
     <div className="flex flex-col h-full safe-top safe-bottom">
       {/* Header */}
       <div className="flex items-center justify-between px-5 py-4 border-b border-border">
         <div>
           <div className="text-lg font-semibold">Egyptian Arabic</div>
-          <div className="text-textSecondary text-xs truncate max-w-[200px]">{user.email}</div>
+          <div className="text-textSecondary text-xs">{cards.length} cards</div>
         </div>
-        <div className="flex items-center gap-3">
-          <button
-            onClick={onAdmin}
-            className="text-primary text-xl pressable leading-none"
-            aria-label="Add card"
-          >
-            +
-          </button>
-          <button
-            onClick={onSignOut}
-            className="text-textSecondary text-sm pressable"
-          >
-            Sign out
-          </button>
-        </div>
+        <button
+          onClick={onAdmin}
+          className="text-primary text-2xl pressable leading-none"
+          aria-label="Add card"
+        >
+          +
+        </button>
       </div>
 
       {/* Content */}
       <div className="flex-1 scroll-area px-5 py-6 space-y-6">
         {/* Deck card */}
         <div className="bg-surface rounded-3xl p-5 border border-border">
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-textSecondary text-xs uppercase tracking-wider font-medium">Current deck</span>
-            <span className="text-textSecondary text-xs">{totalCards} cards</span>
-          </div>
+          <div className="text-xs text-textSecondary uppercase tracking-wider font-medium mb-2">Current deck</div>
           <div className="text-xl font-semibold">Essentials</div>
           <div className="text-textSecondary text-sm mt-1">Core phrases for daily conversation</div>
         </div>
