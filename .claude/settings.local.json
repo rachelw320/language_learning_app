@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install *)",
+      "Bash(npm run *)",
+      "Bash(Get-Content \"C:\\\\Users\\\\User\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-User-OneDrive---The-University-of-Manchester-Desktop-APP---egyptian-arabic\\\\d52ebb6c-04a1-4c19-a915-e99e39f22e3d\\\\tasks\\\\bonadywrb.output\" -Tail 30)",
+      "Bash(npm --version)",
+      "Bash(npx tsc *)",
+      "Bash(npm config *)",
+      "Bash(tee /tmp/npm-install.log)",
+      "Bash(echo \"EXIT:$?\")",
+      "Bash(npx vite *)"
+    ]
+  }
+}

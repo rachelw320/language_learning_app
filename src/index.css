@@ -1,0 +1,104 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Global resets for iPhone PWA ───────────────────────────── */
+* {
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+  touch-action: manipulation;
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  height: 100%;
+  height: 100dvh; /* dynamic viewport height — handles iPhone keyboard */
+  background-color: #000;
+  color: #fff;
+  overscroll-behavior: none;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+
+#root {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* ── Safe area helpers (iPhone notch / home bar) ─────────────── */
+.safe-top    { padding-top: env(safe-area-inset-top); }
+.safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
+.safe-top-margin    { margin-top: env(safe-area-inset-top); }
+.safe-bottom-margin { margin-bottom: env(safe-area-inset-bottom); }
+
+/* ── Card flip animation ─────────────────────────────────────── */
+.card-scene {
+  perspective: 1200px;
+  width: 100%;
+}
+
+.card-body {
+  position: relative;
+  width: 100%;
+  transform-style: preserve-3d;
+  transition: transform 0.45s cubic-bezier(0.4, 0, 0.2, 1);
+  will-change: transform;
+}
+
+.card-body.is-flipped {
+  transform: rotateY(180deg);
+}
+
+.card-face {
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+
+.card-face-back {
+  position: absolute;
+  inset: 0;
+  transform: rotateY(180deg);
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+
+/* ── Slide-up reveal for SRS buttons ────────────────────────── */
+@keyframes slideUp {
+  from { transform: translateY(24px); opacity: 0; }
+  to   { transform: translateY(0);    opacity: 1; }
+}
+.slide-up { animation: slideUp 0.28s ease forwards; }
+
+/* ── Mic pulse animation ─────────────────────────────────────── */
+@keyframes micPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 69, 58, 0.6); }
+  50%       { box-shadow: 0 0 0 18px rgba(255, 69, 58, 0); }
+}
+.mic-recording { animation: micPulse 1.2s ease infinite; }
+
+/* ── Arabic text direction ───────────────────────────────────── */
+.arabic-text {
+  direction: rtl;
+  font-family: 'Geeza Pro', 'Arial Unicode MS', 'Noto Naskh Arabic', sans-serif;
+  line-height: 1.6;
+}
+
+/* ── Scrollable content area ─────────────────────────────────── */
+.scroll-area {
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* ── iOS-style pressed state ─────────────────────────────────── */
+.pressable {
+  transition: transform 0.1s ease, opacity 0.1s ease;
+}
+.pressable:active {
+  transform: scale(0.96);
+  opacity: 0.85;
+}
