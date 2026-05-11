@@ -8,10 +8,22 @@ interface Props {
 
 const MODES: { id: StudyMode; label: string; description: string; icon: string }[] = [
   {
+    id: 'browse',
+    label: 'See all terms',
+    description: 'Browse every card in the deck',
+    icon: '📋',
+  },
+  {
     id: 'flashcard',
     label: 'Flashcard',
     description: 'See English → reveal Arabic',
     icon: '🃏',
+  },
+  {
+    id: 'write',
+    label: 'Write',
+    description: 'See English → write Arabic',
+    icon: '✍️',
   },
   {
     id: 'reverse',

@@ -1,4 +1,4 @@
-export type StudyMode = 'flashcard' | 'reverse' | 'listening' | 'speaking'
+export type StudyMode = 'flashcard' | 'reverse' | 'listening' | 'speaking' | 'write' | 'browse'
 
 export type Screen = 'home' | 'study' | 'admin'
 
