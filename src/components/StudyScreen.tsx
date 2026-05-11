@@ -38,6 +38,13 @@ export default function StudyScreen({ mode, onBack }: Props) {
 
   const card = cards[index]
 
+  // Autoplay audio when a new card appears — play whichever language is shown on the front
+  useEffect(() => {
+    if (!card || mode === 'speaking') return
+    const isArabicFront = mode === 'reverse' || mode === 'listening'
+    playAudio(isArabicFront ? card.audio.ar : card.audio.en).catch(() => {})
+  }, [index, card, mode])
+
   // Merge in any custom cards from Supabase
   useEffect(() => {
     supabase.from('cards').select('*').then(({ data }) => {
@@ -85,9 +92,9 @@ export default function StudyScreen({ mode, onBack }: Props) {
   const handleSpeakingCheck = (input: string) => {
     const result = checkAnswer(input, card.accepted, card.arabicVariants)
     setSpeakingResult({ ...result, recognised: input })
+    playAudio(card.audio.ar).catch(() => {})
     if (result.passed) {
       setUiState('revealed')
-      playAudio(card.audio.ar).catch(() => {})
     }
   }
 
