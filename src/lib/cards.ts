@@ -1,8 +1,12 @@
-import { supabase } from './supabase';
-import type { Card } from '../types';
 import bundledCards from '../data/cards.json';
+import type { Card } from '../types';
+import { supabase } from './supabase';
 
-interface SupabaseRow {
+// Bump this whenever the card format changes so everyone's cached copy gets thrown away
+const CACHE_KEY = 'ea_cards_v2';
+
+// What a row in the supabase cards table looks like (snake_case, unlike the app)
+interface CardRow {
 	id: string;
 	category: string;
 	additional_categories: string[] | null;
@@ -18,7 +22,7 @@ interface SupabaseRow {
 	notes: string;
 }
 
-function rowToCard(row: SupabaseRow): Card {
+function rowToCard(row: CardRow): Card {
 	return {
 		id: row.id,
 		category: row.category,
@@ -36,30 +40,37 @@ function rowToCard(row: SupabaseRow): Card {
 	};
 }
 
-const CACHE_KEY = 'ea_cards_v2';
-
+/** The cards to show straight away, before supabase answers - the last cached copy if there is one, otherwise the ones bundled with the app */
 export function getInitialCards(): Card[] {
 	try {
-		const raw = localStorage.getItem(CACHE_KEY);
-		if (raw) {
-			const parsed = JSON.parse(raw) as Card[];
-			if (parsed.length > 0) return parsed;
+		const cached = localStorage.getItem(CACHE_KEY);
+		if (cached) {
+			const cards = JSON.parse(cached) as Card[];
+			if (cards.length > 0) {
+				return cards;
+			}
 		}
-	} catch {}
+	} catch {
+		// A broken cache just means we use the bundled cards
+	}
 	return bundledCards as Card[];
 }
 
+/** Loads every card from supabase and caches them for next time. Throws if supabase is unreachable or empty, and the app carries on with what it has */
 export async function fetchCardsFromSupabase(): Promise<Card[]> {
 	const { data, error } = await supabase.from('cards').select('*').order('order', { ascending: true });
+	if (error) {
+		throw error;
+	}
+	if (!data?.length) {
+		throw new Error("Supabase didn't return any cards :(");
+	}
 
-	if (error) throw error;
-	if (!data?.length) throw new Error('No cards returned from Supabase');
-
-	const cards = (data as SupabaseRow[]).map(rowToCard);
-
+	const cards = (data as CardRow[]).map(rowToCard);
 	try {
 		localStorage.setItem(CACHE_KEY, JSON.stringify(cards));
-	} catch {}
-
+	} catch {
+		// Storage can be full or blocked (private browsing), the app still works without the cache
+	}
 	return cards;
 }

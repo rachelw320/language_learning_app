@@ -5,6 +5,7 @@
 [functions]
   directory = "netlify/functions"
 
+# The mp3s never change once they're generated, so the browser can keep them for a year
 [[headers]]
   for = "/audio/*"
   [headers.values]

@@ -1,46 +1,55 @@
 /**
- * Adds pronoun-prefixed accepted variants to all verb conjugation cards.
- * e.g. "He goes" gets "howa beyerooh" added to accepted[]
- * alongside the bare "beyerooh" that already exists.
+ * Adds the pronoun-prefixed spelling to the accepted answers of every verb card, so "howa beyerooh" counts as well as "beyerooh".
+ * The pronoun comes from the english ("He goes" -> howa). Safe to run again, it skips anything already there.
  *
  * Usage: node scripts/add-pronoun-variants.mjs
  */
 
 import { readFileSync, writeFileSync } from 'fs';
-import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import { fileURLToPath } from 'url';
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const cardsPath = join(__dirname, '../src/data/cards.json');
-const cards = JSON.parse(readFileSync(cardsPath, 'utf8'));
+const CARDS_PATH = join(dirname(fileURLToPath(import.meta.url)), '../src/data/cards.json');
 
-function getPronoun(english) {
-	if (/^I .+\(f\)/i.test(english) || /^I .+\(m\)/i.test(english)) return 'ana';
-	if (/^I /i.test(english)) return 'ana';
-	if (/^You .+to a man/i.test(english)) return 'enta';
-	if (/^You .+to a woman/i.test(english)) return 'enti';
-	if (/^He /i.test(english)) return 'howa';
-	if (/^She /i.test(english)) return 'heya';
-	if (/^We /i.test(english)) return 'ehna';
-	if (/^They /i.test(english)) return 'homma';
+// Checked in order, so the "to a man" / "to a woman" ones have to come before anything that would match plain "You"
+const PRONOUNS = [
+	[/^I /i, 'ana'],
+	[/^You .+to a man/i, 'enta'],
+	[/^You .+to a woman/i, 'enti'],
+	[/^He /i, 'howa'],
+	[/^She /i, 'heya'],
+	[/^We /i, 'ehna'],
+	[/^They /i, 'homma'],
+];
+
+function pronounFor(english) {
+	for (const [pattern, pronoun] of PRONOUNS) {
+		if (pattern.test(english)) {
+			return pronoun;
+		}
+	}
 	return null;
 }
 
+const cards = JSON.parse(readFileSync(CARDS_PATH, 'utf8'));
 let updated = 0;
+
 const result = cards.map((card) => {
-	if (card.tags[0] !== 'verbs') return card;
-
-	const pronoun = getPronoun(card.english);
-	if (!pronoun) return card;
-
+	if (card.tags[0] !== 'verbs') {
+		return card;
+	}
+	const pronoun = pronounFor(card.english);
+	if (!pronoun) {
+		return card;
+	}
 	const withPronoun = `${pronoun} ${card.transliteration}`;
-	if (card.accepted.includes(withPronoun)) return card;
-
+	if (card.accepted.includes(withPronoun)) {
+		return card;
+	}
 	updated++;
 	return { ...card, accepted: [...card.accepted, withPronoun] };
 });
 
-// Write back preserving compact single-line-per-card format
-const output = '[\n' + result.map((c) => '  ' + JSON.stringify(c)).join(',\n') + '\n]\n';
-writeFileSync(cardsPath, output);
-console.log(`✓ Added pronoun variants to ${updated} verb cards`);
+// Keep the one card per line layout so diffs stay readable
+writeFileSync(CARDS_PATH, '[\n' + result.map((card) => '  ' + JSON.stringify(card)).join(',\n') + '\n]\n');
+console.log(`Added pronoun variants to ${updated} verb cards`);

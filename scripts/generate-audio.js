@@ -1,120 +1,100 @@
 /**
- * generate-audio.js
+ * Generates the arabic and english mp3 for every card in src/data/cards.json using elevenlabs, into public/audio/.
+ * Files that already exist are skipped, so it's safe to re-run after adding cards.
  *
- * Generates Egyptian Arabic and English audio for every card using ElevenLabs.
- * Run once: npm run generate-audio
- *
- * Requires in .env:
- *   ELEVENLABS_API_KEY
- *   ELEVENLABS_ARABIC_VOICE_ID   (your Egyptian Arabic voice)
+ * Usage: npm run generate-audio
+ * Needs ELEVENLABS_API_KEY and ELEVENLABS_ARABIC_VOICE_ID in .env
  */
 
-// Needed on networks with custom SSL certificates (e.g. university proxies)
-process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
-
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs';
-import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
 import { config } from 'dotenv';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
+import { dirname, join } from 'path';
+import { fileURLToPath } from 'url';
 
 config();
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const ROOT = join(__dirname, '..');
+// Some networks (university wifi) swap in their own certificates, and node won't talk to elevenlabs through them without this
+process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
+const ARABIC_DIR = join(ROOT, 'public/audio/ar');
+const ENGLISH_DIR = join(ROOT, 'public/audio/en');
 
 const API_KEY = process.env.ELEVENLABS_API_KEY;
-const ARABIC_VOICE = process.env.ELEVENLABS_ARABIC_VOICE_ID;
+const ARABIC_VOICE_ID = process.env.ELEVENLABS_ARABIC_VOICE_ID;
+// Elevenlabs' "Rachel" voice (no relation). Swap the id if you want a different english voice
+const ENGLISH_VOICE_ID = '21m00Tcm4TlvDq8ikWAM';
+const MODEL_ID = 'eleven_v3';
+// Calm and consistent, no added drama
+const VOICE_SETTINGS = { stability: 0.68, similarity_boost: 0.75, style: 0.0, use_speaker_boost: true };
+// A short pause between cards so we don't hammer the api
+const PAUSE_BETWEEN_CARDS_MS = 300;
 
-// ElevenLabs voice for English — "Rachel" is a clear, natural English voice
-// Replace this ID if you want a different English voice
-const ENGLISH_VOICE = '21m00Tcm4TlvDq8ikWAM';
-
-if (!API_KEY || !ARABIC_VOICE) {
-	console.error('❌  Missing ELEVENLABS_API_KEY or ELEVENLABS_ARABIC_VOICE_ID in .env');
+if (!API_KEY || !ARABIC_VOICE_ID) {
+	console.error('ELEVENLABS_API_KEY or ELEVENLABS_ARABIC_VOICE_ID is missing from .env :(');
 	process.exit(1);
 }
 
-const cards = JSON.parse(readFileSync(join(ROOT, 'src/data/cards.json'), 'utf-8'));
+const cards = JSON.parse(readFileSync(join(ROOT, 'src/data/cards.json'), 'utf8'));
+mkdirSync(ARABIC_DIR, { recursive: true });
+mkdirSync(ENGLISH_DIR, { recursive: true });
 
-// Ensure audio output directories exist
-const arDir = join(ROOT, 'public/audio/ar');
-const enDir = join(ROOT, 'public/audio/en');
-mkdirSync(arDir, { recursive: true });
-mkdirSync(enDir, { recursive: true });
-
-/**
- * Call ElevenLabs TTS and return MP3 bytes.
- * Uses eleven_multilingual_v2 — handles Egyptian Arabic dialect well.
- */
+/** Asks elevenlabs for an mp3 of the text and returns the bytes */
 async function synthesise(text, voiceId) {
-	const url = `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`;
-
-	const res = await fetch(url, {
+	const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
 		method: 'POST',
-		headers: {
-			'xi-api-key': API_KEY,
-			'Content-Type': 'application/json',
-			Accept: 'audio/mpeg',
-		},
-		body: JSON.stringify({
-			text,
-			model_id: 'eleven_v3',
-			voice_settings: {
-				stability: 0.68, // higher = calmer, more consistent delivery
-				similarity_boost: 0.75,
-				style: 0.0, // 0 = no added drama or enthusiasm
-				use_speaker_boost: true,
-			},
-		}),
+		headers: { 'xi-api-key': API_KEY, 'Content-Type': 'application/json', Accept: 'audio/mpeg' },
+		body: JSON.stringify({ text, model_id: MODEL_ID, voice_settings: VOICE_SETTINGS }),
 	});
 
-	if (!res.ok) {
-		const err = await res.text();
-		throw new Error(`ElevenLabs error ${res.status}: ${err}`);
+	if (!response.ok) {
+		throw new Error(`Elevenlabs said no (status ${response.status}): ${await response.text()}`);
 	}
 
-	return Buffer.from(await res.arrayBuffer());
+	return Buffer.from(await response.arrayBuffer());
 }
 
+/** Generates whichever of the card's two files don't exist yet and returns how many it made */
 async function generateCard(card) {
-	const arPath = join(arDir, `${card.id}.mp3`);
-	const enPath = join(enDir, `${card.id}.mp3`);
+	let made = 0;
 
-	// Arabic audio
-	if (existsSync(arPath)) {
-		process.stdout.write(`  ✓ ${card.id} ar  already exists\n`);
-	} else {
-		const audio = await synthesise(card.arabic, ARABIC_VOICE);
-		writeFileSync(arPath, audio);
-		process.stdout.write(`  🎙  ${card.id} ar  → saved\n`);
+	const arabicPath = join(ARABIC_DIR, `${card.id}.mp3`);
+	if (!existsSync(arabicPath)) {
+		writeFileSync(arabicPath, await synthesise(card.arabic, ARABIC_VOICE_ID));
+		made++;
 	}
 
-	// English audio — strip gender notes in brackets e.g. "(to a man)"
-	if (existsSync(enPath)) {
-		process.stdout.write(`  ✓ ${card.id} en  already exists\n`);
-	} else {
-		const enText = card.english.replace(/\s*\([^)]+\)/g, '').trim();
-		const audio = await synthesise(enText, ENGLISH_VOICE);
-		writeFileSync(enPath, audio);
-		process.stdout.write(`  🎙  ${card.id} en  → saved\n`);
+	const englishPath = join(ENGLISH_DIR, `${card.id}.mp3`);
+	if (!existsSync(englishPath)) {
+		// The bracketed notes like "(to a man)" are for reading, not saying out loud
+		const english = card.english.replace(/\s*\([^)]*\)/g, '').trim();
+		writeFileSync(englishPath, await synthesise(english, ENGLISH_VOICE_ID));
+		made++;
 	}
+
+	return made;
 }
 
 async function main() {
-	console.log(`\n🎙  Generating audio for ${cards.length} cards via ElevenLabs…\n`);
+	console.log(`Generating audio for ${cards.length} cards`);
+	let made = 0;
+	let failed = 0;
 
 	for (const card of cards) {
 		try {
-			await generateCard(card);
-			// Small delay so we don't hammer the API
-			await new Promise((r) => setTimeout(r, 300));
-		} catch (err) {
-			console.error(`  ❌  ${card.id}: ${err.message}`);
+			const count = await generateCard(card);
+			made += count;
+			console.log(`${card.id}: ${count === 0 ? 'already done' : `${count} file${count === 1 ? '' : 's'} saved`}`);
+			if (count > 0) {
+				await new Promise((resolve) => setTimeout(resolve, PAUSE_BETWEEN_CARDS_MS));
+			}
+		} catch (error) {
+			failed++;
+			console.error(`${card.id}: ${error.message}`);
 		}
 	}
 
-	console.log(`\n✅  Done — audio saved to public/audio/`);
-	console.log(`    Run "npm run dev" to hear it in the app.\n`);
+	console.log(`\nDone - ${made} files saved to public/audio/${failed ? `, ${failed} cards failed` : ''}`);
 }
 
 main();

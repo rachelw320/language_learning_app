@@ -1,67 +1,50 @@
 /**
- * Netlify function — proxies text to ElevenLabs TTS.
- * Keeps ELEVENLABS_API_KEY server-side only.
+ * Netlify function that turns text into speech with elevenlabs. The admin screen calls it so the api key
+ * never has to be in the browser. POST { text, language: 'ar' | 'en' } and you get an mp3 back
  */
 
-process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+const ELEVENLABS_URL = 'https://api.elevenlabs.io/v1/text-to-speech';
+// Elevenlabs' "Rachel" voice (no relation) for the english side. The arabic voice is set per deployment
+const ENGLISH_VOICE_ID = '21m00Tcm4TlvDq8ikWAM';
+const MODEL_ID = 'eleven_v3';
+// Calm and consistent, no added drama
+const VOICE_SETTINGS = { stability: 0.68, similarity_boost: 0.75, style: 0.0, use_speaker_boost: true };
 
-const ARABIC_VOICE = process.env.ELEVENLABS_ARABIC_VOICE_ID;
-const ENGLISH_VOICE = '21m00Tcm4TlvDq8ikWAM';
-const API_KEY = process.env.ELEVENLABS_API_KEY;
+function jsonResponse(status, body) {
+	return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
+}
 
-export default async function handler(req) {
-	if (req.method !== 'POST') {
-		return new Response('Method not allowed', { status: 405 });
+export default async function handler(request) {
+	if (request.method !== 'POST') {
+		return jsonResponse(405, { error: 'Only POST works here' });
+	}
+
+	const apiKey = process.env.ELEVENLABS_API_KEY;
+	const arabicVoiceId = process.env.ELEVENLABS_ARABIC_VOICE_ID;
+	if (!apiKey || !arabicVoiceId) {
+		return jsonResponse(500, { error: 'ELEVENLABS_API_KEY or ELEVENLABS_ARABIC_VOICE_ID is missing from the netlify env vars :(' });
 	}
 
 	try {
-		const { text, language } = await req.json();
+		const { text, language } = await request.json();
 		if (!text || !language) {
-			return new Response(JSON.stringify({ error: 'Missing text or language' }), {
-				status: 400,
-				headers: { 'Content-Type': 'application/json' },
-			});
+			return jsonResponse(400, { error: "No text or language sent, can't do much without them :(" });
 		}
 
-		const voiceId = language === 'ar' ? ARABIC_VOICE : ENGLISH_VOICE;
-
-		const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
+		const voiceId = language === 'ar' ? arabicVoiceId : ENGLISH_VOICE_ID;
+		const response = await fetch(`${ELEVENLABS_URL}/${voiceId}`, {
 			method: 'POST',
-			headers: {
-				'xi-api-key': API_KEY,
-				'Content-Type': 'application/json',
-				Accept: 'audio/mpeg',
-			},
-			body: JSON.stringify({
-				text,
-				model_id: 'eleven_v3',
-				voice_settings: {
-					stability: 0.68,
-					similarity_boost: 0.75,
-					style: 0.0,
-					use_speaker_boost: true,
-				},
-			}),
+			headers: { 'xi-api-key': apiKey, 'Content-Type': 'application/json', Accept: 'audio/mpeg' },
+			body: JSON.stringify({ text, model_id: MODEL_ID, voice_settings: VOICE_SETTINGS }),
 		});
 
-		if (!res.ok) {
-			const err = await res.text();
-			return new Response(JSON.stringify({ error: err }), {
-				status: res.status,
-				headers: { 'Content-Type': 'application/json' },
-			});
+		if (!response.ok) {
+			return jsonResponse(response.status, { error: `Elevenlabs said no (status ${response.status}): ${await response.text()}` });
 		}
 
-		const buffer = Buffer.from(await res.arrayBuffer());
-		return new Response(buffer, {
-			status: 200,
-			headers: { 'Content-Type': 'audio/mpeg' },
-		});
-	} catch (err) {
-		console.error('TTS error:', err);
-		return new Response(JSON.stringify({ error: 'TTS failed' }), {
-			status: 500,
-			headers: { 'Content-Type': 'application/json' },
-		});
+		return new Response(Buffer.from(await response.arrayBuffer()), { status: 200, headers: { 'Content-Type': 'audio/mpeg' } });
+	} catch (error) {
+		console.error('tts failed:', error);
+		return jsonResponse(500, { error: "Couldn't generate the audio :(" });
 	}
 }

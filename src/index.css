@@ -2,7 +2,7 @@
 @tailwind components;
 @tailwind utilities;
 
-/* ── Global resets for iPhone PWA ───────────────────────────── */
+/* Make it feel like an app rather than a web page on iphone - no tap highlights, no long press menus, no rubber banding */
 * {
 	-webkit-tap-highlight-color: transparent;
 	-webkit-touch-callout: none;
@@ -32,15 +32,14 @@ body {
 	overflow: hidden;
 }
 
-/* ── Prevent iPhone auto-zoom on input focus ─────────────────── */
-/* Safari zooms the viewport when an input's font-size < 16px    */
+/* Safari zooms the whole page in when you tap an input with text smaller than 16px */
 input,
 textarea,
 select {
 	font-size: 16px;
 }
 
-/* ── Safe area helpers (iPhone notch / home bar) ─────────────── */
+/* Padding for the notch and the home bar */
 .safe-top {
 	padding-top: env(safe-area-inset-top);
 }
@@ -48,7 +47,7 @@ select {
 	padding-bottom: env(safe-area-inset-bottom);
 }
 
-/* ── Fade-in animation (card content reveal) ─────────────────── */
+/* The answer panel and next button fade in rather than popping */
 @keyframes fadeIn {
 	from {
 		opacity: 0;
@@ -63,20 +62,18 @@ select {
 	animation: fadeIn 0.2s ease forwards;
 }
 
-/* ── Arabic text direction ───────────────────────────────────── */
 .arabic-text {
 	direction: rtl;
 	font-family: 'Geeza Pro', 'Arial Unicode MS', 'Noto Naskh Arabic', sans-serif;
 	line-height: 1.6;
 }
 
-/* ── Scrollable content area ─────────────────────────────────── */
 .scroll-area {
 	overflow-y: auto;
 	-webkit-overflow-scrolling: touch;
 }
 
-/* ── iOS-style pressed state ─────────────────────────────────── */
+/* Buttons shrink a little while pressed, like ios does */
 .pressable {
 	transition:
 		transform 0.1s ease,

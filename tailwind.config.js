@@ -3,8 +3,8 @@ export default {
 	content: ['./index.html', './src/**/*.{js,ts,jsx,tsx}'],
 	theme: {
 		extend: {
+			// The colours ios uses in dark mode, so it blends in on iphone
 			colors: {
-				// iOS dark mode system colors
 				bg: '#000000',
 				surface: '#1c1c1e',
 				surfaceHigh: '#2c2c2e',

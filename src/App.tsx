@@ -1,23 +1,26 @@
-import { useState, useEffect } from 'react';
-import type { AppScreen, Card } from './types';
-import HomeScreen from './components/HomeScreen';
+import { useEffect, useState } from 'react';
+import AdminScreen from './components/AdminScreen';
 import CategoryScreen from './components/CategoryScreen';
+import HomeScreen from './components/HomeScreen';
 import StudyScreen from './components/StudyScreen';
 import SummaryScreen from './components/SummaryScreen';
-import AdminScreen from './components/AdminScreen';
-import { getInitialCards, fetchCardsFromSupabase } from './lib/cards';
+import { fetchCardsFromSupabase, getInitialCards } from './lib/cards';
+import type { AppScreen, Card } from './types';
 
 export default function App() {
 	const [screen, setScreen] = useState<AppScreen>({ type: 'home' });
 	const [cards, setCards] = useState<Card[]>(getInitialCards);
 
+	// Start with the cached or bundled cards so there's no loading screen, then swap in the live ones from supabase if that works
 	useEffect(() => {
 		fetchCardsFromSupabase()
 			.then(setCards)
 			.catch(() => {
-				/* already using cached/bundled cards */
+				// Offline or no supabase set up - the cards we already have are fine
 			});
 	}, []);
+
+	const backToCategory = (category: string) => setScreen({ type: 'category', categoryName: category });
 
 	return (
 		<div className="h-full bg-bg text-textPrimary overflow-hidden">
@@ -34,8 +37,8 @@ export default function App() {
 					cards={cards}
 					categoryName={screen.categoryName}
 					onBack={() => setScreen({ type: 'home' })}
-					onStart={(mode, category, chunkIndex, sessionCards, isMix) =>
-						setScreen({ type: 'study', mode, category, chunkIndex, cards: sessionCards, isMix })
+					onStart={(mode, sessionName, sessionCards) =>
+						setScreen({ type: 'study', mode, category: screen.categoryName, sessionName, cards: sessionCards })
 					}
 				/>
 			)}
@@ -43,21 +46,17 @@ export default function App() {
 			{screen.type === 'study' && (
 				<StudyScreen
 					mode={screen.mode}
-					category={screen.category}
-					chunkIndex={screen.chunkIndex}
 					cards={screen.cards}
-					isMix={screen.isMix}
-					onBack={() => setScreen({ type: 'category', categoryName: screen.category })}
+					onBack={() => backToCategory(screen.category)}
 					onComplete={(correct, incorrect) =>
 						setScreen({
 							type: 'summary',
 							mode: screen.mode,
 							category: screen.category,
-							chunkIndex: screen.chunkIndex,
+							sessionName: screen.sessionName,
+							cards: screen.cards,
 							correct,
 							incorrect,
-							allCards: screen.cards,
-							isMix: screen.isMix,
 						})
 					}
 				/>
@@ -65,43 +64,25 @@ export default function App() {
 
 			{screen.type === 'summary' && (
 				<SummaryScreen
-					cards={cards}
 					mode={screen.mode}
 					category={screen.category}
-					chunkIndex={screen.chunkIndex}
+					sessionName={screen.sessionName}
+					cards={screen.cards}
 					correct={screen.correct}
 					incorrect={screen.incorrect}
-					allCards={screen.allCards}
-					isMix={screen.isMix}
 					onRetry={() =>
-						setScreen({
-							type: 'study',
-							mode: screen.mode,
-							category: screen.category,
-							chunkIndex: screen.chunkIndex,
-							cards: screen.allCards,
-							isMix: screen.isMix,
-						})
+						setScreen({ type: 'study', mode: screen.mode, category: screen.category, sessionName: screen.sessionName, cards: screen.cards })
 					}
 					onReviewWrong={() =>
 						setScreen({
 							type: 'study',
 							mode: screen.mode,
 							category: screen.category,
-							chunkIndex: screen.chunkIndex,
+							sessionName: screen.sessionName,
 							cards: screen.incorrect,
 						})
 					}
-					onNextSet={(nextChunkIndex, nextCards) =>
-						setScreen({
-							type: 'study',
-							mode: screen.mode,
-							category: screen.category,
-							chunkIndex: nextChunkIndex,
-							cards: nextCards,
-						})
-					}
-					onBack={() => setScreen({ type: 'category', categoryName: screen.category })}
+					onBack={() => backToCategory(screen.category)}
 				/>
 			)}
 

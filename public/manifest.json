@@ -1,7 +1,7 @@
 {
 	"name": "Egyptian Arabic",
 	"short_name": "EgyArabic",
-	"description": "Learn Egyptian Arabic — flashcards, listening, and speaking practice",
+	"description": "Egyptian Arabic flashcards with audio",
 	"display": "standalone",
 	"orientation": "portrait",
 	"background_color": "#000000",

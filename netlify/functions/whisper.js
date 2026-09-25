@@ -1,52 +1,39 @@
 /**
- * Netlify serverless function — proxies audio to OpenAI Whisper.
- * Keeps your OPENAI_API_KEY server-side only.
- *
- * Set OPENAI_API_KEY in: Netlify dashboard → Site settings → Environment variables
+ * Netlify function that sends a recording to openai whisper and returns the transcription.
+ * The app doesn't call this yet - it's here for the speaking practice mode that isn't built. POST a form with a "file" field
  */
 
-import OpenAI from 'openai';
-import { toFile } from 'openai';
+import OpenAI, { toFile } from 'openai';
 
 export const config = { path: '/.netlify/functions/whisper' };
 
-export default async function handler(req) {
-	if (req.method !== 'POST') {
-		return new Response('Method not allowed', { status: 405 });
+function jsonResponse(status, body) {
+	return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
+}
+
+export default async function handler(request) {
+	if (request.method !== 'POST') {
+		return jsonResponse(405, { error: 'Only POST works here' });
 	}
 
 	try {
-		const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-
-		const formData = await req.formData();
-		const audioBlob = formData.get('file');
-
-		if (!audioBlob) {
-			return new Response(JSON.stringify({ error: 'No file provided' }), {
-				status: 400,
-				headers: { 'Content-Type': 'application/json' },
-			});
+		const formData = await request.formData();
+		const recording = formData.get('file');
+		if (!recording) {
+			return jsonResponse(400, { error: "No file sent, can't transcribe nothing :(" });
 		}
 
-		const arrayBuffer = await audioBlob.arrayBuffer();
-		const buffer = Buffer.from(arrayBuffer);
-
-		// Hint Arabic — Whisper handles Egyptian dialect well
+		const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+		// Telling whisper it's arabic helps a lot with the egyptian dialect
 		const transcription = await openai.audio.transcriptions.create({
-			file: await toFile(buffer, 'recording.mp4', { type: 'audio/mp4' }),
+			file: await toFile(Buffer.from(await recording.arrayBuffer()), 'recording.mp4', { type: 'audio/mp4' }),
 			model: 'whisper-1',
 			language: 'ar',
 		});
 
-		return new Response(JSON.stringify({ text: transcription.text }), {
-			status: 200,
-			headers: { 'Content-Type': 'application/json' },
-		});
-	} catch (err) {
-		console.error('Whisper error:', err);
-		return new Response(JSON.stringify({ error: 'Transcription failed' }), {
-			status: 500,
-			headers: { 'Content-Type': 'application/json' },
-		});
+		return jsonResponse(200, { text: transcription.text });
+	} catch (error) {
+		console.error('whisper failed:', error);
+		return jsonResponse(500, { error: "Couldn't transcribe the recording :(" });
 	}
 }
