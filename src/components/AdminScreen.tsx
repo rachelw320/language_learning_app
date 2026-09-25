@@ -1,9 +1,14 @@
 import { useRef, useState } from 'react';
+import { getCategories } from '../lib/categories';
 import { stripQualifiers } from '../lib/normalise';
 import { supabase } from '../lib/supabase';
+import type { Card } from '../types';
 
 interface Props {
+	cards: Card[];
 	onBack: () => void;
+	// Called after a card is saved so the app can reload the deck from supabase
+	onSaved: () => void;
 }
 
 type Lang = 'ar' | 'en';
@@ -26,7 +31,8 @@ function fileExtension(blob: Blob): string {
 	return 'mp4';
 }
 
-export default function AdminScreen({ onBack }: Props) {
+export default function AdminScreen({ cards, onBack, onSaved }: Props) {
+	const [category, setCategory] = useState('');
 	const [english, setEnglish] = useState('');
 	const [arabic, setArabic] = useState('');
 	const [transliteration, setTransliteration] = useState('');
@@ -40,6 +46,10 @@ export default function AdminScreen({ onBack }: Props) {
 
 	const recorderRef = useRef<MediaRecorder | null>(null);
 	const chunksRef = useRef<Blob[]>([]);
+
+	const categories = getCategories(cards);
+	// New cards go on the end of the deck
+	const nextOrder = Math.max(0, ...cards.map((card) => card.order)) + 1;
 
 	const audioFor = (lang: Lang) => (lang === 'ar' ? arabicAudio : englishAudio);
 	const setAudioFor = (lang: Lang, blob: Blob | null) => (lang === 'ar' ? setArabicAudio(blob) : setEnglishAudio(blob));
@@ -119,8 +129,8 @@ export default function AdminScreen({ onBack }: Props) {
 	};
 
 	const handleSave = async () => {
-		if (!english.trim() || !arabic.trim() || !transliteration.trim()) {
-			setError('English, Arabic and transliteration are all needed :(');
+		if (!category.trim() || !english.trim() || !arabic.trim() || !transliteration.trim()) {
+			setError('Category, English, Arabic and transliteration are all needed :(');
 			return;
 		}
 
@@ -131,20 +141,25 @@ export default function AdminScreen({ onBack }: Props) {
 			const arabicUrl = arabicAudio ? await uploadAudio(arabicAudio, `ar/${id}`) : '';
 			const englishUrl = englishAudio ? await uploadAudio(englishAudio, `en/${id}`) : '';
 
+			// Same columns as supabase/seed.sql
 			const { error: insertError } = await supabase.from('cards').insert({
 				id,
+				category: category.trim(),
+				order: nextOrder,
 				english: english.trim(),
 				arabic: arabic.trim(),
 				transliteration: transliteration.trim(),
 				accepted: [transliteration.trim()],
 				arabic_variants: [arabic.trim()],
-				audio_ar: arabicUrl,
-				audio_en: englishUrl,
+				audio: { ar: arabicUrl, en: englishUrl },
+				tags: [],
+				notes: '',
 			});
 			if (insertError) {
 				throw insertError;
 			}
 
+			// Keep the category, you're probably adding a few in a row
 			setEnglish('');
 			setArabic('');
 			setTransliteration('');
@@ -152,6 +167,7 @@ export default function AdminScreen({ onBack }: Props) {
 			setEnglishAudio(null);
 			setSaved(true);
 			setTimeout(() => setSaved(false), SAVED_MESSAGE_MS);
+			onSaved();
 		} catch (err) {
 			setError(err instanceof Error ? err.message : "Couldn't save the card :(");
 		} finally {
@@ -159,7 +175,7 @@ export default function AdminScreen({ onBack }: Props) {
 		}
 	};
 
-	const canSave = Boolean(english.trim() && arabic.trim() && transliteration.trim()) && !saving;
+	const canSave = Boolean(category.trim() && english.trim() && arabic.trim() && transliteration.trim()) && !saving;
 
 	return (
 		<div className="flex flex-col h-full safe-top safe-bottom">
@@ -172,6 +188,19 @@ export default function AdminScreen({ onBack }: Props) {
 			</div>
 
 			<div className="flex-1 px-5 py-6 space-y-3 overflow-y-auto">
+				<input
+					value={category}
+					onChange={(e) => setCategory(e.target.value)}
+					placeholder="Category"
+					list="categories"
+					autoComplete="off"
+					className={inputClass}
+				/>
+				<datalist id="categories">
+					{categories.map((name) => (
+						<option key={name} value={name} />
+					))}
+				</datalist>
 				<input value={english} onChange={(e) => setEnglish(e.target.value)} placeholder="English" className={inputClass} />
 				<input
 					value={arabic}

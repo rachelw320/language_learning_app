@@ -11,14 +11,16 @@ export default function App() {
 	const [screen, setScreen] = useState<AppScreen>({ type: 'home' });
 	const [cards, setCards] = useState<Card[]>(getInitialCards);
 
-	// Start with the cached or bundled cards so there's no loading screen, then swap in the live ones from supabase if that works
-	useEffect(() => {
+	const reloadCards = () => {
 		fetchCardsFromSupabase()
 			.then(setCards)
 			.catch(() => {
 				// Offline or no supabase set up - the cards we already have are fine
 			});
-	}, []);
+	};
+
+	// Start with the cached or bundled cards so there's no loading screen, then swap in the live ones from supabase if that works
+	useEffect(reloadCards, []);
 
 	const backToCategory = (category: string) => setScreen({ type: 'category', categoryName: category });
 
@@ -86,7 +88,7 @@ export default function App() {
 				/>
 			)}
 
-			{screen.type === 'admin' && <AdminScreen onBack={() => setScreen({ type: 'home' })} />}
+			{screen.type === 'admin' && <AdminScreen cards={cards} onBack={() => setScreen({ type: 'home' })} onSaved={reloadCards} />}
 		</div>
 	);
 }
