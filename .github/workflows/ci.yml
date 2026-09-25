@@ -1,0 +1,32 @@
+# Runs the typecheck, tests and a build on every push and pull request, so a broken change shows up as a red cross on github
+
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # npm ci installs exactly what's in package-lock.json
+      - run: npm ci
+
+      - run: npm run typecheck
+
+      - run: npm test
+
+      # No secrets needed - without supabase env vars the app just uses the bundled cards
+      - run: npm run build

@@ -7,7 +7,12 @@
 		"dev": "vite",
 		"build": "tsc && vite build",
 		"preview": "vite preview",
-		"generate-audio": "node scripts/generate-audio.js"
+		"typecheck": "tsc --noEmit",
+		"test": "vitest run",
+		"format": "prettier --write .",
+		"format:check": "prettier --check .",
+		"generate-audio": "node scripts/generate-audio.js",
+		"seed": "node scripts/seed-supabase.mjs"
 	},
 	"dependencies": {
 		"@supabase/supabase-js": "^2.45.0",
