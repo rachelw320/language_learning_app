@@ -67,10 +67,6 @@ export function newCardProgress(cardId: string): CardProgress {
   }
 }
 
-export function isDue(progress: CardProgress): boolean {
-  return new Date(progress.dueDate) <= new Date()
-}
-
 // Update mastery streak. Call after grading — separate from SRS so mastery
 // can be tracked independently of interval scheduling.
 export function updateMastery(progress: CardProgress, passed: boolean): CardProgress {

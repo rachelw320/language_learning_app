@@ -47,13 +47,6 @@ input, textarea, select {
 }
 .fade-in { animation: fadeIn 0.2s ease forwards; }
 
-/* ── Slide-up animation (grade buttons) ─────────────────────── */
-@keyframes slideUp {
-  from { transform: translateY(20px); opacity: 0; }
-  to   { transform: translateY(0);    opacity: 1; }
-}
-.slide-up { animation: slideUp 0.25s ease forwards; }
-
 /* ── Arabic text direction ───────────────────────────────────── */
 .arabic-text {
   direction: rtl;
