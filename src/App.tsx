@@ -4,7 +4,7 @@ import CategoryScreen from './components/CategoryScreen';
 import HomeScreen from './components/HomeScreen';
 import StudyScreen from './components/StudyScreen';
 import SummaryScreen from './components/SummaryScreen';
-import { fetchCardsFromSupabase, getInitialCards } from './lib/cards';
+import { fetchLiveCards, getInitialCards } from './lib/cards';
 import type { AppScreen, Card } from './types';
 
 export default function App() {
@@ -12,14 +12,14 @@ export default function App() {
 	const [cards, setCards] = useState<Card[]>(getInitialCards);
 
 	const reloadCards = () => {
-		fetchCardsFromSupabase()
+		fetchLiveCards()
 			.then(setCards)
 			.catch(() => {
-				// Offline or no supabase set up - the cards we already have are fine
+				// Offline or no api set up - the cards we already have are fine
 			});
 	};
 
-	// Start with the cached or bundled cards so there's no loading screen, then swap in the live ones from supabase if that works
+	// Start with the cached or bundled cards so there's no loading screen, then swap in the live ones from the api if that works
 	useEffect(reloadCards, []);
 
 	const backToCategory = (category: string) => setScreen({ type: 'category', categoryName: category });

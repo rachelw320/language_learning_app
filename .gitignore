@@ -9,6 +9,10 @@ node_modules/
 dist/
 *.log
 
+# Cdk output and the deployed stack's outputs (arns for this account)
+cdk.out/
+cdk-outputs.json
+
 # OS / editor / tools
 .DS_Store
 .vscode/

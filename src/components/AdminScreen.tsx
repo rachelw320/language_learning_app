@@ -1,19 +1,21 @@
 import { useRef, useState } from 'react';
+import type { AudioLanguage } from '../../shared/validation';
+import { createCard, generateSpeech, hasApi, uploadAudio } from '../lib/api';
 import { getCategories } from '../lib/categories';
 import { stripQualifiers } from '../lib/normalise';
-import { supabase } from '../lib/supabase';
 import type { Card } from '../types';
 
 interface Props {
 	cards: Card[];
 	onBack: () => void;
-	// Called after a card is saved so the app can reload the deck from supabase
+	// Called after a card is saved so the app can reload the deck from the api
 	onSaved: () => void;
 }
 
-type Lang = 'ar' | 'en';
+const LANGUAGES: AudioLanguage[] = ['ar', 'en'];
 
-const LANGUAGES: Lang[] = ['ar', 'en'];
+// The admin password only lives for the tab, so it's not sitting in local storage forever
+const ADMIN_KEY_STORAGE = 'ea_admin_key';
 
 // How long "Saved!" stays on the button
 const SAVED_MESSAGE_MS = 2000;
@@ -21,25 +23,24 @@ const SAVED_MESSAGE_MS = 2000;
 const inputClass =
 	'w-full bg-surface border border-border rounded-2xl px-4 py-3 text-textPrimary placeholder-textSecondary outline-none focus:border-primary';
 
-function fileExtension(blob: Blob): string {
-	if (blob.type.includes('webm')) {
-		return 'webm';
+function rememberedAdminKey(): string {
+	try {
+		return sessionStorage.getItem(ADMIN_KEY_STORAGE) ?? '';
+	} catch {
+		return '';
 	}
-	if (blob.type.includes('mpeg')) {
-		return 'mp3';
-	}
-	return 'mp4';
 }
 
 export default function AdminScreen({ cards, onBack, onSaved }: Props) {
+	const [adminKey, setAdminKey] = useState(rememberedAdminKey);
 	const [category, setCategory] = useState('');
 	const [english, setEnglish] = useState('');
 	const [arabic, setArabic] = useState('');
 	const [transliteration, setTransliteration] = useState('');
 	const [arabicAudio, setArabicAudio] = useState<Blob | null>(null);
 	const [englishAudio, setEnglishAudio] = useState<Blob | null>(null);
-	const [recording, setRecording] = useState<Lang | null>(null);
-	const [generating, setGenerating] = useState<Lang | null>(null);
+	const [recording, setRecording] = useState<AudioLanguage | null>(null);
+	const [generating, setGenerating] = useState<AudioLanguage | null>(null);
 	const [saving, setSaving] = useState(false);
 	const [saved, setSaved] = useState(false);
 	const [error, setError] = useState('');
@@ -48,15 +49,22 @@ export default function AdminScreen({ cards, onBack, onSaved }: Props) {
 	const chunksRef = useRef<Blob[]>([]);
 
 	const categories = getCategories(cards);
-	// New cards go on the end of the deck
-	const nextOrder = Math.max(0, ...cards.map((card) => card.order)) + 1;
 
-	const audioFor = (lang: Lang) => (lang === 'ar' ? arabicAudio : englishAudio);
-	const setAudioFor = (lang: Lang, blob: Blob | null) => (lang === 'ar' ? setArabicAudio(blob) : setEnglishAudio(blob));
-	const textFor = (lang: Lang) => (lang === 'ar' ? arabic.trim() : english.trim());
+	const audioFor = (lang: AudioLanguage) => (lang === 'ar' ? arabicAudio : englishAudio);
+	const setAudioFor = (lang: AudioLanguage, blob: Blob | null) => (lang === 'ar' ? setArabicAudio(blob) : setEnglishAudio(blob));
+	const textFor = (lang: AudioLanguage) => (lang === 'ar' ? arabic.trim() : english.trim());
+
+	const updateAdminKey = (value: string) => {
+		setAdminKey(value);
+		try {
+			sessionStorage.setItem(ADMIN_KEY_STORAGE, value);
+		} catch {
+			// Private browsing can block this, you'll just have to type it again next time
+		}
+	};
 
 	// Hold to record - this runs on pointer down and stopRecording on pointer up
-	const startRecording = async (lang: Lang) => {
+	const startRecording = async (lang: AudioLanguage) => {
 		setError('');
 		try {
 			const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -86,8 +94,8 @@ export default function AdminScreen({ cards, onBack, onSaved }: Props) {
 		setRecording(null);
 	};
 
-	// Asks the tts netlify function for elevenlabs audio. The bracketed notes on english cards ("(to a man)") aren't read out
-	const generate = async (lang: Lang) => {
+	// The bracketed notes on english cards ("(to a man)") aren't read out
+	const generate = async (lang: AudioLanguage) => {
 		const text = lang === 'ar' ? arabic.trim() : stripQualifiers(english);
 		if (!text) {
 			return;
@@ -95,17 +103,9 @@ export default function AdminScreen({ cards, onBack, onSaved }: Props) {
 		setGenerating(lang);
 		setError('');
 		try {
-			const response = await fetch('/.netlify/functions/tts', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ text, language: lang }),
-			});
-			if (!response.ok) {
-				throw new Error(`The tts function returned ${response.status}`);
-			}
-			setAudioFor(lang, await response.blob());
-		} catch {
-			setError("Couldn't generate the audio - this only works on the deployed site :(");
+			setAudioFor(lang, await generateSpeech(text, lang, adminKey));
+		} catch (err) {
+			setError(err instanceof Error ? err.message : "Couldn't generate the audio :(");
 		} finally {
 			setGenerating(null);
 		}
@@ -118,16 +118,6 @@ export default function AdminScreen({ cards, onBack, onSaved }: Props) {
 		player.play();
 	};
 
-	// Uploads to the public "audio" bucket and returns the url to store on the card
-	const uploadAudio = async (blob: Blob, path: string): Promise<string> => {
-		const fullPath = `${path}.${fileExtension(blob)}`;
-		const { error: uploadError } = await supabase.storage.from('audio').upload(fullPath, blob, { contentType: blob.type, upsert: true });
-		if (uploadError) {
-			throw uploadError;
-		}
-		return supabase.storage.from('audio').getPublicUrl(fullPath).data.publicUrl;
-	};
-
 	const handleSave = async () => {
 		if (!category.trim() || !english.trim() || !arabic.trim() || !transliteration.trim()) {
 			setError('Category, English, Arabic and transliteration are all needed :(');
@@ -137,29 +127,16 @@ export default function AdminScreen({ cards, onBack, onSaved }: Props) {
 		setSaving(true);
 		setError('');
 		try {
-			const id = `card_${Date.now()}`;
-			const arabicUrl = arabicAudio ? await uploadAudio(arabicAudio, `ar/${id}`) : '';
-			const englishUrl = englishAudio ? await uploadAudio(englishAudio, `en/${id}`) : '';
+			const audio = {
+				ar: arabicAudio ? await uploadAudio(arabicAudio, 'ar', adminKey) : '',
+				en: englishAudio ? await uploadAudio(englishAudio, 'en', adminKey) : '',
+			};
+			await createCard(
+				{ category: category.trim(), english: english.trim(), arabic: arabic.trim(), transliteration: transliteration.trim(), audio },
+				adminKey,
+			);
 
-			// Same columns as supabase/seed.sql
-			const { error: insertError } = await supabase.from('cards').insert({
-				id,
-				category: category.trim(),
-				order: nextOrder,
-				english: english.trim(),
-				arabic: arabic.trim(),
-				transliteration: transliteration.trim(),
-				accepted: [transliteration.trim()],
-				arabic_variants: [arabic.trim()],
-				audio: { ar: arabicUrl, en: englishUrl },
-				tags: [],
-				notes: '',
-			});
-			if (insertError) {
-				throw insertError;
-			}
-
-			// Keep the category, you're probably adding a few in a row
+			// Keep the category and password, you're probably adding a few in a row
 			setEnglish('');
 			setArabic('');
 			setTransliteration('');
@@ -175,7 +152,7 @@ export default function AdminScreen({ cards, onBack, onSaved }: Props) {
 		}
 	};
 
-	const canSave = Boolean(category.trim() && english.trim() && arabic.trim() && transliteration.trim()) && !saving;
+	const canSave = Boolean(adminKey && category.trim() && english.trim() && arabic.trim() && transliteration.trim()) && !saving;
 
 	return (
 		<div className="flex flex-col h-full safe-top safe-bottom">
@@ -188,6 +165,18 @@ export default function AdminScreen({ cards, onBack, onSaved }: Props) {
 			</div>
 
 			<div className="flex-1 px-5 py-6 space-y-3 overflow-y-auto">
+				{!hasApi && (
+					<p className="text-danger text-sm text-center">There's no api set up (VITE_API_URL), so cards can't be saved from here</p>
+				)}
+
+				<input
+					type="password"
+					value={adminKey}
+					onChange={(e) => updateAdminKey(e.target.value)}
+					placeholder="Admin password"
+					autoComplete="current-password"
+					className={inputClass}
+				/>
 				<input
 					value={category}
 					onChange={(e) => setCategory(e.target.value)}
@@ -245,7 +234,7 @@ export default function AdminScreen({ cards, onBack, onSaved }: Props) {
 								</button>
 								<button
 									onClick={() => generate(lang)}
-									disabled={generating !== null || !textFor(lang)}
+									disabled={generating !== null || !adminKey || !textFor(lang)}
 									className="flex-1 py-2.5 rounded-2xl text-sm font-medium pressable bg-surface border border-border text-textPrimary disabled:opacity-40"
 								>
 									{generating === lang ? 'Generating…' : 'Generate'}

@@ -1,3 +1,7 @@
+import type { Card } from '../../shared/card';
+
+export type { Card };
+
 export type StudyMode = 'english-to-arabic' | 'arabic-to-english' | 'browse';
 
 export type AppScreen =
@@ -6,25 +10,6 @@ export type AppScreen =
 	| { type: 'study'; mode: StudyMode; category: string; sessionName: string; cards: Card[] }
 	| { type: 'summary'; mode: StudyMode; category: string; sessionName: string; cards: Card[]; correct: Card[]; incorrect: Card[] }
 	| { type: 'admin' };
-
-export interface Card {
-	id: string;
-	category: string;
-	// A card can show up in more than one category. Mastery is per card id so it's shared between them
-	additionalCategories?: string[];
-	order: number;
-	deck?: string;
-	english: string;
-	arabic: string;
-	transliteration: string;
-	// Every transliteration spelling that counts as correct
-	accepted: string[];
-	// Every arabic spelling that counts as correct
-	arabicVariants: string[];
-	audio: { ar: string; en: string };
-	tags: string[];
-	notes: string;
-}
 
 export interface CardProgress {
 	cardId: string;

@@ -1,6 +1,6 @@
 ### Egyptian Arabic flashcard app
 
-A react and typescript pwa for learning egyptian arabic, with typed answers, fuzzy matching for transliteration, spaced repetition and audio for every card
+A react and typescript pwa for learning egyptian arabic, with typed answers, fuzzy matching for transliteration, spaced repetition and audio for every card. The backend is a lambda api on aws with aurora postgres and s3, all defined in cdk
 
 #### Overview
 
@@ -11,6 +11,8 @@ It's a small web app I use on my phone. The home screen lists the categories and
 - Browse: search and scroll through every card in the category and tap to hear it
 
 A session is either the whole category shuffled ("mix all") or one group from it - verb categories are grouped by verb so you get every conjugation of "go" together, and the others are grouped by topic. Progress is saved on the device, there are no accounts.
+
+The cards come from a postgres database through a small api, but the deck is also bundled into the app, so it works even when the api is asleep or you're offline.
 
 #### Why I built it
 
@@ -45,7 +47,7 @@ The summary screen shows your score and the cards you missed. From there you can
 
 ##### Audio
 
-Every card has an arabic and an english mp3 under public/audio, generated once with elevenlabs (the eleven_v3 model with an egyptian arabic voice) by scripts/generate-audio.js and committed to the repo, so netlify just serves them as static files with a one year cache header. The right side plays automatically when a card comes up and the speaker button replays it.
+Every card has an arabic and an english mp3 under public/audio, generated once with elevenlabs (the eleven_v3 model with an egyptian arabic voice) by scripts/generate-audio.js and committed to the repo, so netlify just serves them as static files with a one year cache header. Audio for cards added later lives in s3 instead (see the admin screen). The right side plays automatically when a card comes up and the speaker button replays it.
 
 ##### Cards
 
@@ -61,21 +63,46 @@ The deck is src/data/cards.json - 369 cards in 7 categories:
 
 Each card has the english, the arabic, a transliteration, a list of accepted transliteration spellings, arabic spelling variants, audio paths and tags. Verb cards have every pronoun as a separate card ("I go", "you go (f)", "he goes" and so on) and the group is labelled with the "he" form.
 
-The same cards are also in a supabase table. The app starts with the bundled json (or the last copy it cached), then fetches from supabase and swaps that in if it works, so I can add cards without redeploying.
+The same cards are in the postgres database. The app starts with the bundled json (or the last copy it cached), then fetches from the api and swaps that in if it works, so I can add cards without redeploying.
 
 ##### Admin screen
 
-The + on the home screen opens a form to add a card: category, english, arabic and transliteration, and then for each language you can either hold to record the audio yourself or generate it with elevenlabs. Generation goes through a netlify function so the api key stays on the server. The audio is uploaded to a supabase storage bucket, the card is inserted into the cards table and the app reloads the deck.
+The + on the home screen opens a form to add a card. It asks for the admin password, then a category, english, arabic and transliteration, and for each language you can either hold to record the audio yourself or generate it with elevenlabs. Recordings upload straight to s3 with a presigned url from the api, the card goes in through the api, and the app reloads the deck.
+
+#### Architecture
+
+```
+browser (netlify) --> api gateway --> lambda (hono) --> aurora serverless v2 postgres (over the rds data api)
+                                                   \--> s3 (presigned uploads) --> cloudfront (audio urls)
+```
+
+Everything on the right of the browser is one cdk stack (infra/lib/stack.ts). The lambda isn't in the vpc - it talks to aurora over the rds data api, which is plain https with iam auth, so there's no connection pooling to think about and no nat gateway to pay for. The database scales down to zero when nobody's studying and wakes up on the next query.
+
+##### Loading cards
+
+1. The app renders straight away with the cached or bundled cards.
+2. It calls GET /cards.
+3. The lambda queries aurora through the data api. If the database was paused this first query takes about 15 seconds while it wakes up.
+4. The app swaps in the live cards and caches them in local storage for next time.
+
+##### Adding a card
+
+1. The admin screen sends the admin password in an x-admin-key header on every write.
+2. For each recording it asks POST /audio/upload-url, gets back a presigned s3 url that's valid for 5 minutes, and PUTs the file straight to the bucket.
+3. It then sends POST /cards. The lambda validates the body with zod and says exactly which fields are wrong if it isn't happy.
+4. The lambda inserts the row (working out the position from the last card) and returns the finished card.
+5. The app reloads the deck from the api.
 
 #### Tech stack
 
-- React 18 and typescript, built with vite
+- React 18 and typescript, built with vite, hosted on netlify
 - Tailwind css
-- Supabase (postgres for the cards table, storage for uploaded audio)
-- Netlify for hosting and the serverless functions
+- Hono on aws lambda (node 22, arm64) behind an api gateway http api
+- Aurora serverless v2 postgres, accessed through the rds data api, with drizzle orm and generated migrations
+- S3 and cloudfront for uploaded audio
+- Aws cdk for all of the infrastructure
 - Elevenlabs for the audio
 - Vitest for the tests, prettier for formatting, github actions to run the checks
-- Pwa manifest and icons so it installs on the home screen
 
 #### Key implementation details
 
@@ -84,73 +111,78 @@ The + on the home screen opens a form to add a card: category, english, arabic a
 - Arabic normalisation - diacritics stripped, أ إ آ unified to ا, ى -> ي, ة -> ه, punctuation removed, so "يعني ايه" matches "يعني إيه؟"
 - Arabic detection - if more than 40% of the characters in your answer are arabic script it's compared with the arabic variants instead of the transliterations
 - Groups - cards are tagged [kind, group], e.g. ["verbs", "go"] or ["essentials", "greetings"]. A category counts as a verb category if its cards are tagged "verbs" first, and either way the second tag is what the category screen groups by. Verb groups are named after the "he" card
-- Pronoun variants - scripts/add-pronoun-variants.mjs adds "howa beyerooh" as an accepted answer next to "beyerooh" for every conjugation, so you can answer with or without the pronoun
 - Mastery is separate from sm-2 - sm-2 handles the interval and ease, mastery is just a streak of different-day correct answers, so one can't mess up the other
-- Card loading - bundled json -> local storage cache -> supabase. The cache key is versioned (ea_cards_v2) so I can force a refresh when the card format changes
+- Card loading - bundled json -> local storage cache -> api. The cache key is versioned (ea_cards_v2) so I can force a refresh when the card format changes
+- Aurora scales to zero - minimum capacity is 0 acu, so it pauses after a few idle minutes and costs nothing until the next query. The app starting on its bundled cards is what hides the wake up time
+- Data api instead of a vpc lambda - a lambda inside the vpc would need a nat gateway to reach elevenlabs, and that's the one thing in this stack that would cost real money every month
+- Jsonb for the list fields - the data api is awkward with postgres arrays, so accepted, arabic variants, tags and audio are jsonb columns. "order" is a reserved word so the column is called "position"
+- Presigned uploads - the browser uploads audio straight to s3 rather than pushing the bytes through the lambda. The url only allows the three content types the app produces and dies after 5 minutes
+- One shared password - the write routes compare the x-admin-key header with a constant time compare. It's a password not accounts, which is fine for one person's app
+- Testable api - createApp takes the database and the aws bits as arguments, so the tests run the real routes against fakes
 - One audio element - ios only lets a page play sound after a tap, so the app reuses the element unlocked by the first tap and autoplay on later cards works
 - Iphone details - inputs are 16px so safari doesn't zoom in when you tap them, and autocorrect and autocapitalise are off on the transliteration box
 
 #### Project structure
 
 - src/App.tsx - screen state and the card fetch on load
-- src/components/HomeScreen.tsx - categories, mastery bar and recent words
-- src/components/CategoryScreen.tsx - mode picker and the verb or topic groups
-- src/components/StudyScreen.tsx - the three modes and the answer checking
-- src/components/SummaryScreen.tsx - end of session score, try again, review wrong
-- src/components/AdminScreen.tsx - add a card with recorded or generated audio
+- src/components/ - home, category, study, summary and admin screens
+- src/lib/api.ts - the calls to the api
+- src/lib/cards.ts - bundled, cached and live card loading
 - src/lib/matching.ts and src/lib/normalise.ts - answer matching
 - src/lib/srs.ts - sm-2, mastery streak and dismissing
 - src/lib/progress.ts - local storage read and write
 - src/lib/categories.ts - categories, shuffling, verb and topic grouping
-- src/lib/cards.ts - bundled, cached and supabase card loading
 - src/lib/audio.ts - the shared audio player
 - src/data/cards.json - the deck
 - public/audio/ - the generated mp3s
-- netlify/functions/tts.js - elevenlabs proxy used by the admin screen
-- netlify/functions/whisper.js - openai whisper proxy (not wired into the ui yet, see limitations)
+- shared/ - the card type and zod schemas that the app and the api both use
+- api/src/index.ts - the lambda entry point, wires up aurora, s3 and elevenlabs
+- api/src/app.ts - the hono routes
+- api/src/cards.ts - reading and writing cards with drizzle
+- api/src/schema.ts - the drizzle table definition
+- api/src/db.ts - the drizzle client over the data api
+- api/src/elevenlabs.ts - text to speech
+- infra/ - the cdk app and stack
+- db/migrations/ - sql generated from the schema by drizzle-kit
+- scripts/db-migrate.ts and scripts/db-seed.ts - apply migrations and load the deck, over the data api
 - scripts/generate-audio.js - generates the mp3s for every card
-- scripts/seed-supabase.mjs - turns cards.json into supabase/seed.sql
 - scripts/add-pronoun-variants.mjs - adds pronoun-prefixed accepted answers to verb cards
 - scripts/gen-icons.mjs - draws the app icons
-- supabase/seed.sql - creates the cards table and inserts the deck (generated, don't edit by hand)
-- test/ - vitest tests for the matching, normalisation, srs and grouping code
-- .github/workflows/ci.yml - runs the typecheck, tests and build on github on every push
+- test/ - vitest tests for the matching, normalisation, srs, grouping and api code
+- .github/workflows/ci.yml - runs the typecheck, tests, cdk synth and build on github on every push
 
 #### Setup
 
 You'll need:
 
-- Node.js 18 or later
-- A [supabase](https://supabase.com/) project (the free plan is fine) - optional, the app runs on the bundled cards without it
+- Node.js 22 (the lambda runs on 22 as well)
+- An [aws](https://aws.amazon.com/) account with the aws cli installed and `aws configure` done
 - An [elevenlabs](https://elevenlabs.io/) account and an egyptian arabic voice id - only if you want to regenerate the audio or use the generate button on the admin screen
-- A [netlify](https://www.netlify.com/) account to deploy
+- A [netlify](https://www.netlify.com/) account for the site
 
 ```bash
 git clone https://github.com/rachelw320/language_learning_app.git
 cd language_learning_app
 npm install
+cp .env.example .env   # fill in the values, .env is git-ignored
 ```
 
 #### Environment variables
 
-- VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY - read by the front end. If they're missing the app falls back to the bundled cards instead of crashing
-- ELEVENLABS_API_KEY and ELEVENLABS_ARABIC_VOICE_ID - used by scripts/generate-audio.js locally and by netlify/functions/tts.js, so set them in the netlify dashboard too
-- OPENAI_API_KEY - only for the whisper function, which the app doesn't call yet
+- VITE_API_URL - the api, printed as ApiUrl when you deploy. Read by the app in the browser, so set it in the netlify dashboard too. Without it the app just uses the bundled cards
+- APP_ORIGIN - where the site is served from, for cors on the api and the bucket
+- ADMIN_PASSWORD - what the admin screen asks for
+- ELEVENLABS_API_KEY and ELEVENLABS_ARABIC_VOICE_ID - used by scripts/generate-audio.js locally and by the tts route on the lambda
 
-Put them in a .env file locally - it's git-ignored and only .env.example with placeholder values is committed.
+The last three are read by the cdk app at deploy time and put on the lambda as environment variables. The aws credentials themselves come from `aws configure`.
 
 #### Running locally
 
 ```bash
-cp .env.example .env   # add your real values - .env is git-ignored
 npm run dev
 ```
 
-That runs the app on vite's dev server. The netlify functions (the generate button on the admin screen) only run under netlify's own dev server:
-
-```bash
-npx netlify dev
-```
+That runs the app on vite's dev server, against the deployed api if VITE_API_URL is set and the bundled cards if not.
 
 To run the checks (github actions runs these on every push too):
 
@@ -158,6 +190,7 @@ To run the checks (github actions runs these on every push too):
 npm run typecheck
 npm test
 npm run format:check   # or npm run format to fix it
+npm run infra:synth    # compiles the cdk stack and bundles the lambda, no aws credentials needed
 ```
 
 To regenerate every card's audio after editing cards.json:
@@ -174,9 +207,22 @@ npm run build   # tsc, then vite build into dist/
 
 #### Deploying
 
-Netlify: connect the repo, and netlify.toml already sets the build command (npm run build), the publish directory (dist) and the functions directory. Add the environment variables in site settings. Audio files get a one year immutable cache header.
+The backend, from a machine with aws credentials:
 
-Supabase: run supabase/seed.sql in the sql editor to create the cards table and insert the deck (regenerate it with npm run seed after changing cards.json). The seed only adds a public read policy, so for the admin screen to work you also need an insert policy on cards and a public storage bucket called audio that allows uploads.
+```bash
+npx cdk bootstrap      # once per aws account and region
+npm run infra:deploy   # creates everything and writes the outputs to cdk-outputs.json
+npm run db:migrate     # creates the cards table
+npm run db:seed        # loads src/data/cards.json into it
+```
+
+Then put the ApiUrl output in VITE_API_URL on netlify and redeploy the site. Netlify.toml already sets the build command (npm run build) and the publish directory (dist). Audio files get a one year immutable cache header.
+
+Changing the database: edit api/src/schema.ts, run `npm run db:generate` to get a migration file, and `npm run db:migrate` to apply it.
+
+Tearing it all down is `npm run infra:destroy`. It keeps a final snapshot of the database and leaves the audio bucket alone.
+
+What it costs: with nobody using it, under a pound a month - aurora storage, the secrets manager secret for the database password, and nothing for the lambda, api gateway, cloudfront or s3 at this size. While someone's actually studying, aurora bills per second at half an acu, which is pennies for a few minutes.
 
 #### Adding it to your phone
 
@@ -186,26 +232,29 @@ Open the site in safari, share -> add to home screen. It opens full screen witho
 
 - Progress lives in local storage, so it's per device and clearing safari's website data wipes it. There are no accounts (I removed login to keep it simple)
 - The sm-2 due dates are recorded but nothing uses them yet - you pick a category or group to study, the app doesn't pick cards by what's due
+- The first request after the database has paused takes about 15 seconds. The app hides this by starting on the bundled cards, but the admin screen will feel slow on the first save of the day
 - The 72% threshold is forgiving on purpose, which means very short words can pass with a wrong letter. The transliteration normaliser also drops 7, 5 and 9 (ح, خ, غ), so those letters don't count in the comparison
 - The audio is ai generated, not a native speaker. It's good for the dialect but it isn't perfect
-- Speaking practice is half built - the whisper function exists but nothing in the app calls it
 - The deck is uneven, core verbs is two thirds of it
-- The admin screen has no login (see below)
+- The admin screen is a shared password, not proper accounts
 
 #### Security considerations
 
-- The elevenlabs and openai keys are only ever used inside the netlify functions, the browser never sees them
-- The supabase anon key is public by design and the cards table is publicly readable. With an insert policy for the admin screen, anyone with the url can add cards and upload audio. It's a personal app, but it's the first thing I'd change
-- .env is git-ignored and only .env.example with placeholders is committed
-- scripts/generate-audio.js turns off certificate checking (NODE_TLS_REJECT_UNAUTHORIZED=0) so it works on networks that swap in their own certificates, like university wifi. It only ever runs on my laptop, the deployed function doesn't do this
+- The elevenlabs key and the admin password only exist on the lambda, as environment variables (encrypted at rest). Secrets manager would be the next step
+- The database is in isolated subnets with no route to the internet. The only way in is the data api, which needs iam permissions the lambda has and nothing else does. Its password is generated and kept in secrets manager
+- The audio bucket blocks all public access. Cloudfront is the only thing allowed to read it, and uploads need a presigned url from the api, which only hands them out with the admin password
+- Cors on the api and the bucket is locked to the site's origin (and localhost)
+- .env, cdk.out and cdk-outputs.json are git-ignored, only .env.example with placeholders is committed
+- scripts/generate-audio.js turns off certificate checking (NODE_TLS_REJECT_UNAUTHORIZED=0) so it works on networks that swap in their own certificates, like university wifi. It only ever runs on my laptop
 
 #### Possible future improvements
 
+- Move the elevenlabs key and admin password into secrets manager
+- Real login (cognito) instead of a shared password
 - Use the sm-2 due dates to build a daily review session across categories
-- Finish speaking practice with whisper
-- Optional accounts so progress syncs between devices
+- Accounts so progress syncs between devices - a progress table is easy now there's a database
+- Speaking practice with whisper as another route on the lambda
 - A service worker so it works offline
-- Lock the admin screen behind a password or a supabase login
 - Keep 7, 5 and 9 in the transliteration matching
 - Show the notes field on cards, it exists but is empty at the moment
 - A "next group" button on the summary screen
