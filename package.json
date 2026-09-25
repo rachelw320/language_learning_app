@@ -1,7 +1,9 @@
 {
-	"name": "egyptian-arabic-app",
-	"private": true,
+	"name": "language-learning-app",
 	"version": "0.1.0",
+	"private": true,
+	"description": "Egyptian arabic flashcards with typed answers, spaced repetition and audio for every card. React, typescript and vite, deployed on netlify.",
+	"license": "MIT",
 	"type": "module",
 	"scripts": {
 		"dev": "vite",

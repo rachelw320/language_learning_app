@@ -10,7 +10,7 @@ It's a small web app I use on my phone. The home screen lists the categories and
 - Arabic -> english: the arabic plays and is shown with its transliteration, you type the meaning
 - Browse: search and scroll through every card in the category and tap to hear it
 
-Cards come in sets of 15 in order, or you can mix the whole category. Verb categories are grouped by verb so you get every conjugation of "go" together. Progress is saved on the device, there are no accounts.
+A session is either the whole category shuffled ("mix all") or one group from it - verb categories are grouped by verb so you get every conjugation of "go" together, and the others are grouped by topic. Progress is saved on the device, there are no accounts.
 
 #### Why I built it
 
@@ -32,15 +32,15 @@ A lot of the language apps I looked at for arabic switch to modern standard arab
 2. You type the english meaning.
 3. Same matching, but qualifiers in brackets like "(f)" or "(to a man)" are stripped from both sides first, so "you go" matches "you go (to a man)".
 
-##### After a set
+##### After a session
 
-The summary screen shows your score and the cards you missed. From there you can retry the set, review just the ones you got wrong, or go on to the next set of 15.
+The summary screen shows your score and the cards you missed. From there you can try the same cards again, or review just the ones you got wrong.
 
 ##### Progress and mastery
 
 - Every answer updates an sm-2 schedule for that card (correct counts as grade 3, wrong as grade 1, which resets it)
 - Separately, a card becomes mastered after you get it right on 5 different days. Only one correct answer a day counts towards the streak, and a wrong answer resets it.
-- When you get a mastered card right you can tap "don't show again for a week" and it disappears from sets for 7 days
+- When you get a mastered card right you can tap "don't show again for a week" and it disappears from sessions for 7 days
 - All of this is stored in local storage on the device
 
 ##### Audio
@@ -65,7 +65,7 @@ The same cards are also in a supabase table. The app starts with the bundled jso
 
 ##### Admin screen
 
-The + on the home screen opens a form to add a card: english, arabic and transliteration, and then for each language you can either hold to record the audio yourself or generate it with elevenlabs. Generation goes through a netlify function so the api key stays on the server. The audio is uploaded to a supabase storage bucket and the card is inserted into the cards table.
+The + on the home screen opens a form to add a card: category, english, arabic and transliteration, and then for each language you can either hold to record the audio yourself or generate it with elevenlabs. Generation goes through a netlify function so the api key stays on the server. The audio is uploaded to a supabase storage bucket, the card is inserted into the cards table and the app reloads the deck.
 
 #### Tech stack
 
@@ -74,46 +74,47 @@ The + on the home screen opens a form to add a card: english, arabic and transli
 - Supabase (postgres for the cards table, storage for uploaded audio)
 - Netlify for hosting and the serverless functions
 - Elevenlabs for the audio
+- Vitest for the tests, prettier for formatting, github actions to run the checks
 - Pwa manifest and icons so it installs on the home screen
 
 #### Key implementation details
 
-- Fuzzy matching - levenshtein distance turned into a 0 to 1 similarity, best score across all the accepted variants, pass threshold 0.72. In src/lib/fuzzyMatch.ts
+- Fuzzy matching - levenshtein distance turned into a 0 to 1 similarity, best score across all the accepted variants, pass threshold 0.72. In src/lib/matching.ts
 - Transliteration normalisation - lowercased, apostrophes removed, ph -> f, ck -> k, oo -> u, ei -> e, ai -> a, then everything except letters, spaces, 2 and 3 is dropped (2 and 3 are the chat arabic letters for ء and ع). So "ya3ni eih" and "ya3ny eh" end up close
 - Arabic normalisation - diacritics stripped, أ إ آ unified to ا, ى -> ي, ة -> ه, punctuation removed, so "يعني ايه" matches "يعني إيه؟"
 - Arabic detection - if more than 40% of the characters in your answer are arabic script it's compared with the arabic variants instead of the transliterations
-- Sets - a category is split into sets of 15 by the card's order field. Mix all shuffles the whole category and skips the next set button
-- Verb groups - a category counts as a verb category if its cards' first tag is "verbs". Cards are grouped by their second tag (the verb) and the "he" card gives the label
+- Groups - cards are tagged [kind, group], e.g. ["verbs", "go"] or ["essentials", "greetings"]. A category counts as a verb category if its cards are tagged "verbs" first, and either way the second tag is what the category screen groups by. Verb groups are named after the "he" card
 - Pronoun variants - scripts/add-pronoun-variants.mjs adds "howa beyerooh" as an accepted answer next to "beyerooh" for every conjugation, so you can answer with or without the pronoun
 - Mastery is separate from sm-2 - sm-2 handles the interval and ease, mastery is just a streak of different-day correct answers, so one can't mess up the other
 - Card loading - bundled json -> local storage cache -> supabase. The cache key is versioned (ea_cards_v2) so I can force a refresh when the card format changes
+- One audio element - ios only lets a page play sound after a tap, so the app reuses the element unlocked by the first tap and autoplay on later cards works
 - Iphone details - inputs are 16px so safari doesn't zoom in when you tap them, and autocorrect and autocapitalise are off on the transliteration box
 
 #### Project structure
 
 - src/App.tsx - screen state and the card fetch on load
 - src/components/HomeScreen.tsx - categories, mastery bar and recent words
-- src/components/CategoryScreen.tsx - mode picker, sets and verb groups
+- src/components/CategoryScreen.tsx - mode picker and the verb or topic groups
 - src/components/StudyScreen.tsx - the three modes and the answer checking
-- src/components/SummaryScreen.tsx - end of set score, retry, review wrong, next set
+- src/components/SummaryScreen.tsx - end of session score, try again, review wrong
 - src/components/AdminScreen.tsx - add a card with recorded or generated audio
-- src/components/AudioButton.tsx - audio playback
-- src/components/AuthScreen.tsx, FlashCard.tsx, MicButton.tsx, SRSButtons.tsx - left over from earlier versions (login, the old card layout, speaking practice and anki-style grade buttons), not used at the moment
-- src/lib/fuzzyMatch.ts and src/lib/normalizeText.ts - answer matching
+- src/lib/matching.ts and src/lib/normalise.ts - answer matching
 - src/lib/srs.ts - sm-2, mastery streak and dismissing
 - src/lib/progress.ts - local storage read and write
-- src/lib/chunks.ts - categories, sets, verb and tag grouping
+- src/lib/categories.ts - categories, shuffling, verb and topic grouping
 - src/lib/cards.ts - bundled, cached and supabase card loading
+- src/lib/audio.ts - the shared audio player
 - src/data/cards.json - the deck
 - public/audio/ - the generated mp3s
 - netlify/functions/tts.js - elevenlabs proxy used by the admin screen
 - netlify/functions/whisper.js - openai whisper proxy (not wired into the ui yet, see limitations)
 - scripts/generate-audio.js - generates the mp3s for every card
-- scripts/seed-supabase.mjs - turns cards.json into supabase-seed.sql
+- scripts/seed-supabase.mjs - turns cards.json into supabase/seed.sql
 - scripts/add-pronoun-variants.mjs - adds pronoun-prefixed accepted answers to verb cards
-- scripts/gen-icons.mjs - generates the app icons
-- supabase-seed.sql - creates the cards table and inserts the deck
-- supabase/schema.sql - old progress table from when the app had accounts, not needed any more
+- scripts/gen-icons.mjs - draws the app icons
+- supabase/seed.sql - creates the cards table and inserts the deck (generated, don't edit by hand)
+- test/ - vitest tests for the matching, normalisation, srs and grouping code
+- .github/workflows/ci.yml - runs the typecheck, tests and build on github on every push
 
 #### Setup
 
@@ -136,11 +137,12 @@ npm install
 - ELEVENLABS_API_KEY and ELEVENLABS_ARABIC_VOICE_ID - used by scripts/generate-audio.js locally and by netlify/functions/tts.js, so set them in the netlify dashboard too
 - OPENAI_API_KEY - only for the whisper function, which the app doesn't call yet
 
-Put them in a .env file locally - it's git-ignored and only placeholder values are committed (.env.example, which still lists an old azure tts setup that the script doesn't use any more).
+Put them in a .env file locally - it's git-ignored and only .env.example with placeholder values is committed.
 
 #### Running locally
 
 ```bash
+cp .env.example .env   # add your real values - .env is git-ignored
 npm run dev
 ```
 
@@ -148,6 +150,14 @@ That runs the app on vite's dev server. The netlify functions (the generate butt
 
 ```bash
 npx netlify dev
+```
+
+To run the checks (github actions runs these on every push too):
+
+```bash
+npm run typecheck
+npm test
+npm run format:check   # or npm run format to fix it
 ```
 
 To regenerate every card's audio after editing cards.json:
@@ -166,7 +176,7 @@ npm run build   # tsc, then vite build into dist/
 
 Netlify: connect the repo, and netlify.toml already sets the build command (npm run build), the publish directory (dist) and the functions directory. Add the environment variables in site settings. Audio files get a one year immutable cache header.
 
-Supabase: run supabase-seed.sql in the sql editor to create the cards table and insert the deck (regenerate it with node scripts/seed-supabase.mjs after changing cards.json). The seed only adds a public read policy, so for the admin screen to work you also need an insert policy on cards and a public storage bucket called audio that allows uploads.
+Supabase: run supabase/seed.sql in the sql editor to create the cards table and insert the deck (regenerate it with npm run seed after changing cards.json). The seed only adds a public read policy, so for the admin screen to work you also need an insert policy on cards and a public storage bucket called audio that allows uploads.
 
 #### Adding it to your phone
 
@@ -175,10 +185,10 @@ Open the site in safari, share -> add to home screen. It opens full screen witho
 #### Limitations
 
 - Progress lives in local storage, so it's per device and clearing safari's website data wipes it. There are no accounts (I removed login to keep it simple)
-- The sm-2 due dates are recorded but nothing uses them yet - sessions are picked by category and set, not by what's due
+- The sm-2 due dates are recorded but nothing uses them yet - you pick a category or group to study, the app doesn't pick cards by what's due
 - The 72% threshold is forgiving on purpose, which means very short words can pass with a wrong letter. The transliteration normaliser also drops 7, 5 and 9 (ح, خ, غ), so those letters don't count in the comparison
 - The audio is ai generated, not a native speaker. It's good for the dialect but it isn't perfect
-- Speaking practice is half built - the whisper function and a mic button exist but they're not in the study screens
+- Speaking practice is half built - the whisper function exists but nothing in the app calls it
 - The deck is uneven, core verbs is two thirds of it
 - The admin screen has no login (see below)
 
@@ -187,14 +197,19 @@ Open the site in safari, share -> add to home screen. It opens full screen witho
 - The elevenlabs and openai keys are only ever used inside the netlify functions, the browser never sees them
 - The supabase anon key is public by design and the cards table is publicly readable. With an insert policy for the admin screen, anyone with the url can add cards and upload audio. It's a personal app, but it's the first thing I'd change
 - .env is git-ignored and only .env.example with placeholders is committed
-- Both the audio script and the tts function set NODE_TLS_REJECT_UNAUTHORIZED=0 to get through networks with their own certificates (university proxies). That turns off certificate checking, so it should come out of the deployed function
+- scripts/generate-audio.js turns off certificate checking (NODE_TLS_REJECT_UNAUTHORIZED=0) so it works on networks that swap in their own certificates, like university wifi. It only ever runs on my laptop, the deployed function doesn't do this
 
 #### Possible future improvements
 
 - Use the sm-2 due dates to build a daily review session across categories
 - Finish speaking practice with whisper
-- Optional accounts so progress syncs between devices (the old user_progress table in supabase/schema.sql is a starting point)
+- Optional accounts so progress syncs between devices
 - A service worker so it works offline
 - Lock the admin screen behind a password or a supabase login
 - Keep 7, 5 and 9 in the transliteration matching
 - Show the notes field on cards, it exists but is empty at the moment
+- A "next group" button on the summary screen
+
+#### License
+
+[Mit](LICENSE)

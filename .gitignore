@@ -1,7 +1,16 @@
-node_modules
-dist
-.env
-.env.local
-*.local
+# Dependencies
+node_modules/
+
+# Local secrets: never commit
+.env*
+!.env.example
+
+# Build output and logs
+dist/
+*.log
+
+# OS / editor / tools
 .DS_Store
+.vscode/
+.idea/
 .claude/
