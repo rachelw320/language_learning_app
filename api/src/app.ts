@@ -24,7 +24,8 @@ export interface AppDeps {
 	// Where uploaded audio ends up being served from (the cloudfront domain)
 	audioBaseUrl: string;
 	createUploadUrl: (key: string, contentType: string, ttlSeconds: number) => Promise<string>;
-	synthesise: Synthesiser;
+	// Missing when the deployment has no elevenlabs key, in which case the tts route says so
+	synthesise?: Synthesiser;
 }
 
 function safeEqual(a: string, b: string): boolean {
@@ -76,6 +77,9 @@ export function createApp(deps: AppDeps) {
 	});
 
 	app.post('/tts', admin, json(ttsSchema), async (c) => {
+		if (!deps.synthesise) {
+			return c.json({ error: "Text to speech isn't set up on this deployment :(" }, 503);
+		}
 		const { text, language } = c.req.valid('json');
 		return c.body(await deps.synthesise(text, language), 200, { 'Content-Type': 'audio/mpeg' });
 	});

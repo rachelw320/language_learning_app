@@ -122,6 +122,25 @@ describe('admin routes', () => {
 	});
 });
 
+describe('tts without elevenlabs', () => {
+	it('says so rather than falling over', async () => {
+		const { repository } = fakeRepository();
+		const app = createApp({
+			cards: repository,
+			adminPassword: 'secret',
+			allowedOrigins: [],
+			audioBaseUrl: '',
+			createUploadUrl: async () => '',
+		});
+		const response = await app.request('/tts', {
+			method: 'POST',
+			headers: { ...JSON_HEADERS, ...ADMIN },
+			body: JSON.stringify({ text: 'شاي', language: 'ar' }),
+		});
+		expect(response.status).toBe(503);
+	});
+});
+
 describe('the rest', () => {
 	it('answers cors preflight for the app origin', async () => {
 		const response = await testApp(fakeRepository().repository).request('/cards', {

@@ -19,6 +19,13 @@ function required(name: string): string {
 	return value;
 }
 
+// Elevenlabs is optional so the api still works on a deployment without a key, the generate button just gets a clear error
+function elevenLabs() {
+	const apiKey = process.env.ELEVENLABS_API_KEY;
+	const arabicVoiceId = process.env.ELEVENLABS_ARABIC_VOICE_ID;
+	return apiKey && arabicVoiceId ? createSynthesiser({ apiKey, arabicVoiceId }) : undefined;
+}
+
 const s3 = new S3Client({});
 const bucket = required('AUDIO_BUCKET');
 
@@ -29,7 +36,7 @@ const app = createApp({
 	audioBaseUrl: required('AUDIO_BASE_URL'),
 	createUploadUrl: (key, contentType, ttlSeconds) =>
 		getSignedUrl(s3, new PutObjectCommand({ Bucket: bucket, Key: key, ContentType: contentType }), { expiresIn: ttlSeconds }),
-	synthesise: createSynthesiser({ apiKey: required('ELEVENLABS_API_KEY'), arabicVoiceId: required('ELEVENLABS_ARABIC_VOICE_ID') }),
+	synthesise: elevenLabs(),
 });
 
 export const handler = handle(app);
