@@ -5,25 +5,25 @@
  * Usage: node scripts/seed-supabase.mjs
  */
 
-import { readFileSync, writeFileSync } from 'fs'
-import { fileURLToPath } from 'url'
-import { dirname, join } from 'path'
+import { readFileSync, writeFileSync } from 'fs';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
 
-const __dirname = dirname(fileURLToPath(import.meta.url))
-const cards = JSON.parse(readFileSync(join(__dirname, '../src/data/cards.json'), 'utf8'))
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const cards = JSON.parse(readFileSync(join(__dirname, '../src/data/cards.json'), 'utf8'));
 
 function s(val) {
-  if (val === null || val === undefined) return 'NULL'
-  return `'${String(val).replace(/'/g, "''")}'`
+	if (val === null || val === undefined) return 'NULL';
+	return `'${String(val).replace(/'/g, "''")}'`;
 }
 
 function arr(vals) {
-  if (!vals || vals.length === 0) return "ARRAY[]::text[]"
-  return `ARRAY[${vals.map(v => s(v)).join(', ')}]`
+	if (!vals || vals.length === 0) return 'ARRAY[]::text[]';
+	return `ARRAY[${vals.map((v) => s(v)).join(', ')}]`;
 }
 
 function jsonb(obj) {
-  return `'${JSON.stringify(obj).replace(/'/g, "''")}'::jsonb`
+	return `'${JSON.stringify(obj).replace(/'/g, "''")}'::jsonb`;
 }
 
 const schema = `-- ════════════════════════════════════════════════════════
@@ -68,9 +68,11 @@ CREATE POLICY "Cards are publicly readable" ON cards
   FOR SELECT USING (true);
 
 -- 4. Seed data (upsert — safe to re-run)
-`
+`;
 
-const rows = cards.map(c => `INSERT INTO cards
+const rows = cards
+	.map(
+		(c) => `INSERT INTO cards
   (id, category, additional_categories, "order", deck,
    english, arabic, transliteration, accepted, arabic_variants,
    audio, tags, notes)
@@ -92,12 +94,14 @@ ON CONFLICT (id) DO UPDATE SET
   arabic_variants       = EXCLUDED.arabic_variants,
   audio                 = EXCLUDED.audio,
   tags                  = EXCLUDED.tags,
-  notes                 = EXCLUDED.notes;`).join('\n\n')
+  notes                 = EXCLUDED.notes;`,
+	)
+	.join('\n\n');
 
-const footer = `\n\n-- Verify\nSELECT COUNT(*) AS total_cards FROM cards;\n`
+const footer = `\n\n-- Verify\nSELECT COUNT(*) AS total_cards FROM cards;\n`;
 
-const sql = schema + rows + footer
-const outPath = join(__dirname, '../supabase-seed.sql')
-writeFileSync(outPath, sql)
-console.log(`✓ Generated supabase-seed.sql (${cards.length} cards)`)
-console.log(`  → Paste into Supabase SQL Editor and run`)
+const sql = schema + rows + footer;
+const outPath = join(__dirname, '../supabase-seed.sql');
+writeFileSync(outPath, sql);
+console.log(`✓ Generated supabase-seed.sql (${cards.length} cards)`);
+console.log(`  → Paste into Supabase SQL Editor and run`);

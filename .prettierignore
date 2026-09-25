@@ -1,0 +1,14 @@
+node_modules/
+dist/
+package-lock.json
+
+# One card per line on purpose, prettier would spread it over thousands of lines
+src/data/cards.json
+
+# Generated and binary
+supabase/seed.sql
+supabase-seed.sql
+public/audio/
+
+# Keep the readme exactly as written
+*.md
